@@ -26,8 +26,8 @@ The component is split into four primary functional areas:
     *   Inherits from `esphome::button::Button`.
     *   Triggers connection actions. `CONNECT` enables the parent `BLEClient` to initiate a link, while `DISCONNECT` triggers the `DISABLING` sequence.
 
-4.  **`SpheroBB8 Status` (Text Sensor)**:
-    *   Reports the current state of the connection and initialization (e.g., "Disconnected", "Initializing (Anti-DOS)", "Ready", "Disabling...").
+4.  **`SpheroBB8 Connection Status` (Text Sensor)**:
+    *   Reports the current state of the connection and initialization (e.g., "Disconnected", "Connecting", "Initializing", "Ready", "Disabling").
 
 ## Sphero BB-8 BLE Protocol
 
@@ -58,8 +58,9 @@ The BB-8 will **not** accept commands and may disconnect if this specific sequen
 2.  **Send Anti-DOS**: Write string `"011i3"` to `2bbd`.
 3.  **Set TX Power**: Write byte `0x07` to `2bb2`.
 4.  **Wake**: Write byte `0x01` to `2bbf`.
+5.  **Stabilize**: Wait 1000ms in `READY_STABILIZE` state. *Ensures the droid's firmware is fully ready to process unacknowledged commands.*
 
-*Note: All initialization writes use `ESP_GATT_WRITE_TYPE_RSP` (Write with Response) to ensure sequential execution.*
+*Note: All initialization writes should use `ESP_GATT_WRITE_TYPE_RSP` (Write with Response) to ensure sequential execution.*
 
 ### Packet Structure
 
@@ -70,7 +71,7 @@ Commands sent to the **Commands Characteristic** (`2ba1`) follow this binary str
 ```
 
 *   **SOP1**: `0xFF` (Start of Packet 1)
-*   **SOP2**: `0xFF` (Start of Packet 2)
+*   **SOP2**: `0xFF` (Start of Packet 2) - *Note: can be 0xFE for async, but we send 0xFF.*
 *   **DID** (Device ID):
     *   `0x00`: Core (Ping, Version, Sleep, etc.)
     *   `0x02`: Sphero (Roll, RGB, Back LED, etc.)

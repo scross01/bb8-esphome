@@ -15,7 +15,7 @@ CONFIG_SCHEMA = light.RGB_LIGHT_SCHEMA.extend(
         cv.GenerateID(CONF_OUTPUT_ID): cv.declare_id(SpheroBB8Light),
         cv.GenerateID(CONF_SPHERO_BB8_ID): cv.use_id(SpheroBB8),
         cv.Required(CONF_TYPE): cv.one_of("RGB", "TAILLIGHT", upper=True),
-        cv.Optional(light.CONF_DEFAULT_TRANSITION_LENGTH, default="0s"): cv.positive_time_period_milliseconds,
+        cv.Optional(light.CONF_DEFAULT_TRANSITION_LENGTH, default="1s"): cv.positive_time_period_milliseconds,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 

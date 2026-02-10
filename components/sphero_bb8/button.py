@@ -14,7 +14,7 @@ CONFIG_SCHEMA = button.button_schema(SpheroBB8Button).extend(
     {
         cv.GenerateID(CONF_SPHERO_BB8_ID): cv.use_id(SpheroBB8),
         cv.Required(CONF_TYPE): cv.one_of("CONNECT", "DISCONNECT", upper=True),
-        cv.Optional(CONF_ENTITY_CATEGORY, default=ENTITY_CATEGORY_CONFIG): cv.entity_category,
+        cv.Optional(CONF_ENTITY_CATEGORY): cv.entity_category,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 

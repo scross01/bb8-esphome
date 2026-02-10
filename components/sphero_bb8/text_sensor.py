@@ -11,7 +11,7 @@ CONF_SPHERO_BB8_ID = "sphero_bb8_id"
 CONFIG_SCHEMA = text_sensor.text_sensor_schema().extend(
     {
         cv.GenerateID(CONF_SPHERO_BB8_ID): cv.use_id(SpheroBB8),
-        cv.Optional(CONF_ENTITY_CATEGORY, default=ENTITY_CATEGORY_DIAGNOSTIC): cv.entity_category,
+        cv.Optional(CONF_ENTITY_CATEGORY): cv.entity_category,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 

@@ -23,6 +23,20 @@ void SpheroBB8::setup() {
   this->current_back_brightness_ = 0xFE;
   this->enabled_ = this->auto_connect_;
   this->parent()->set_enabled(this->enabled_);
+  this->parent()->set_auto_connect(this->enabled_);
+}
+
+void SpheroBB8::connect() {
+  ESP_LOGI(TAG, "Connect button pressed, enabling BB8 connection...");
+  this->enabled_ = true;
+  this->parent()->set_enabled(true);
+  this->parent()->set_auto_connect(true);
+}
+
+void SpheroBB8::disconnect() {
+  ESP_LOGI(TAG, "Disconnect button pressed, disabling BB8 connection...");
+  this->enabled_ = false;
+  this->parent()->set_auto_connect(false);
 }
 
 void SpheroBB8::loop() {
@@ -39,7 +53,6 @@ void SpheroBB8::loop() {
       ESP_LOGI(TAG, "Sending Sleep command before disconnect...");
       this->state_ = DISABLING;
       this->last_state_change_ = now;
-      // Sleep command: DID 0x00, CID 0x22, Data [0,0,0,0,0]
       this->send_packet(0x00, 0x22, {0x00, 0x00, 0x00, 0x00, 0x00}, false);
       this->force_lights_off_();
     }
@@ -55,21 +68,16 @@ void SpheroBB8::loop() {
     }
 
     if (this->state_ == DISABLING) {
-      this->update_status_sensor_("Disabling...");
+      this->update_status_sensor_("Disabling");
     } else {
       this->update_status_sensor_("Disconnected");
     }
     return;
   }
 
-  // Handle re-enabling
-  if (this->enabled_ && !this->parent()->enabled) {
-    ESP_LOGI(TAG, "Enabling BB8 connection...");
-    this->parent()->set_enabled(true);
-  }
-
-  if (this->state_ == DISCONNECTED || !this->parent()->connected()) {
-    this->update_status_sensor_("Disconnected");
+  if (!this->parent()->connected()) {
+    this->state_ = DISCONNECTED;
+    this->update_status_sensor_("Connecting");
     return;
   }
   
@@ -77,11 +85,9 @@ void SpheroBB8::loop() {
     return;
   }
 
-  // State Machine matching Gobot: Subscribe -> Anti-DOS -> TX Power -> Wake -> Ready
-  
   if (this->state_ == SUBSCRIBE && this->char_handle_responses_ != 0) {
-    this->update_status_sensor_("Initializing (Subscribe)");
-    ESP_LOGI(TAG, "Subscribing to notifications...");
+    this->update_status_sensor_("Initializing");
+    ESP_LOGD(TAG, "Initialization State: Subscribing to responses");
     auto status = esp_ble_gattc_register_for_notify(this->parent()->get_gattc_if(), 
                                                     this->parent()->get_remote_bda(), 
                                                     this->char_handle_responses_);
@@ -94,8 +100,8 @@ void SpheroBB8::loop() {
   else if (this->state_ == ANTI_DOS && this->char_handle_anti_dos_ != 0) {
     if (now - this->last_state_change_ < 200) return;
 
-    this->update_status_sensor_("Initializing (Anti-DOS)");
-    ESP_LOGI(TAG, "Sending Anti-DOS...");
+    this->update_status_sensor_("Initializing");
+    ESP_LOGD(TAG, "Initialization State: Anti-DOS");
     uint8_t anti_dos_payload[] = {'0', '1', '1', 'i', '3'};
     this->write_in_progress_ = true;
     this->last_write_request_ = now;
@@ -110,8 +116,8 @@ void SpheroBB8::loop() {
     this->last_state_change_ = now;
   }
   else if (this->state_ == TX_POWER && this->char_handle_tx_power_ != 0) {
-    this->update_status_sensor_("Initializing (TX Power)");
-    ESP_LOGI(TAG, "Sending TX Power...");
+    this->update_status_sensor_("Initializing");
+    ESP_LOGD(TAG, "Initialization State: TX Power");
     uint8_t tx_power_payload[] = {7};
     this->write_in_progress_ = true;
     this->last_write_request_ = now;
@@ -126,8 +132,8 @@ void SpheroBB8::loop() {
     this->last_state_change_ = now;
   }
   else if (this->state_ == WAKE && this->char_handle_wake_ != 0) {
-    this->update_status_sensor_("Initializing (Wake)");
-    ESP_LOGI(TAG, "Sending Wake...");
+    this->update_status_sensor_("Initializing");
+    ESP_LOGD(TAG, "Initialization State: Wake");
     uint8_t wake_payload[] = {0x01};
     this->write_in_progress_ = true;
     this->last_write_request_ = now;
@@ -138,11 +144,20 @@ void SpheroBB8::loop() {
       ESP_LOGE(TAG, "Failed to write Wake: %d", status);
       this->write_in_progress_ = false;
     }
-    this->state_ = READY;
+    this->state_ = READY_STABILIZE;
     this->last_state_change_ = now;
-    this->last_packet_sent_ = now;
-    ESP_LOGI(TAG, "Sphero BB8 is Ready!");
   } 
+  else if (this->state_ == READY_STABILIZE) {
+    this->update_status_sensor_("Initializing");
+    if (now - this->last_state_change_ >= 2000) {
+      this->state_ = READY;
+      this->last_state_change_ = now;
+      this->last_packet_sent_ = now;
+      ESP_LOGI(TAG, "Sphero BB8 is Ready!");
+    } else {
+      ESP_LOGV(TAG, "Initialization State: Stabilizing (%dms remaining)", 2000 - (now - this->last_state_change_));
+    }
+  }
   else if (this->state_ == READY) {
     this->update_status_sensor_("Ready");
     if (now - this->last_packet_sent_ > 2000) {
@@ -154,13 +169,13 @@ void SpheroBB8::loop() {
     }
 
     if (this->target_r_ != this->current_r_ || this->target_g_ != this->current_g_ || this->target_b_ != this->current_b_) {
-      ESP_LOGD(TAG, "Syncing RGB: %d, %d, %d", this->target_r_, this->target_g_, this->target_b_);
+      ESP_LOGV(TAG, "Syncing RGB: %d, %d, %d", this->target_r_, this->target_g_, this->target_b_);
       this->send_packet(0x02, 0x20, {this->target_r_, this->target_g_, this->target_b_, 0x00}, false);
       this->current_r_ = this->target_r_;
       this->current_g_ = this->target_g_;
       this->current_b_ = this->target_b_;
     } else if (this->target_back_brightness_ != this->current_back_brightness_) {
-      ESP_LOGD(TAG, "Syncing Back LED: %d", this->target_back_brightness_);
+      ESP_LOGV(TAG, "Syncing Back LED: %d", this->target_back_brightness_);
       this->send_packet(0x02, 0x21, {this->target_back_brightness_}, false);
       this->current_back_brightness_ = this->target_back_brightness_;
     }
@@ -176,7 +191,7 @@ void SpheroBB8::update_status_sensor_(const std::string &status) {
 
 void SpheroBB8::force_lights_off_() {
   for (auto *light : this->lights_) {
-    if (light->light_state_ != nullptr) {
+    if (light != nullptr && light->light_state_ != nullptr) {
       if (light->light_state_->remote_values.get_state() > 0) {
         auto call = light->light_state_->make_call();
         call.set_state(false);

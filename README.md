@@ -34,6 +34,7 @@ esp32_ble_tracker:
 ble_client:
   - mac_address: D0:0E:71:8D:94:C7  # Replace with your BB-8's MAC address
     id: bb8_client
+    auto_connect: false           # Crucial: prevents waking droid on ESP32 boot
 
 sphero_bb8:
   id: bb8_hub
@@ -66,7 +67,7 @@ button:
 
 text_sensor:
   - platform: sphero_bb8
-    name: "BB-8 Status"
+    name: "BB-8 Connection Status"
     sphero_bb8_id: bb8_hub
 ```
 
@@ -88,6 +89,7 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 - **platform** (Required, string): Must be `sphero_bb8`.
 - **type** (Required, string): Either `RGB` for the main body LED or `TAILLIGHT` for the back LED.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
+- **default_transition_length** (Optional, time): The duration of the color/brightness fade. Defaults to `1s`.
 - All other options from [ESPHome Light](https://esphome.io/components/light/index.html).
 
 ### button
@@ -105,4 +107,4 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 
 ## Technical Details
 
-This component is designed specifically for the Sphero BB-8 and the ESP32. It utilizes the ESP-IDF framework to manage GATT operations and characteristic subscriptions. The implementation features a state-synchronization loop that ensures the droid reaches the desired color or brightness even during rapid transitions, while a built-in keep-alive mechanism maintains the connection during idle periods.
+This component is designed specifically for the Sphero BB-8 and the ESP32. It utilizes the ESP-IDF framework to manage GATT operations and characteristic subscriptions. The implementation features a state-synchronization loop that ensures the droid reaches the desired color or brightness even during rapid transitions, while a built-in keep-alive mechanism maintains the connection during idle periods. The status sensor reports "Disconnected", "Connecting", "Initializing", "Ready", and "Disabling".

@@ -33,6 +33,9 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void set_enabled(bool enabled) { enabled_ = enabled; }
   void register_light(SpheroBB8Light *light) { lights_.push_back(light); }
 
+  void connect();
+  void disconnect();
+
   bool is_ready() const { return state_ == READY; }
 
  protected:
@@ -48,6 +51,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
     ANTI_DOS,
     TX_POWER,
     WAKE,
+    READY_STABILIZE,
     READY,
     DISABLING,
   } state_{DISCONNECTED};
@@ -82,9 +86,9 @@ class SpheroBB8Button : public button::Button, public Component {
   void set_type(const std::string &type) { type_ = type; }
   void press_action() override {
     if (this->type_ == "CONNECT") {
-      this->parent_->set_enabled(true);
+      this->parent_->connect();
     } else {
-      this->parent_->set_enabled(false);
+      this->parent_->disconnect();
     }
   }
 

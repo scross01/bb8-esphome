@@ -18,8 +18,11 @@ light::LightTraits SpheroBB8Light::get_traits() {
 
 void SpheroBB8Light::write_state(light::LightState *state) {
   this->light_state_ = state;
+
+  auto remote_vals = state->remote_values;
+
   if (this->parent_ == nullptr || !this->parent_->is_ready()) {
-    if (state->remote_values.get_state() > 0) {
+    if (remote_vals.get_state() > 0) {
       ESP_LOGD(TAG, "Robot not ready, forcing light state back to OFF in UI");
       auto call = state->make_call();
       call.set_state(false);
@@ -28,15 +31,15 @@ void SpheroBB8Light::write_state(light::LightState *state) {
     return;
   }
 
-  auto values = state->remote_values;
+  auto current_vals = state->current_values;
   if (this->type_ == "RGB") {
-    float r = values.get_red();
-    float g = values.get_green();
-    float b = values.get_blue();
-    float br = values.get_brightness() * values.get_state();
+    float r = current_vals.get_red();
+    float g = current_vals.get_green();
+    float b = current_vals.get_blue();
+    float br = current_vals.get_brightness() * current_vals.get_state();
     this->parent_->set_rgb(r * br * 255, g * br * 255, b * br * 255);
   } else if (this->type_ == "TAILLIGHT") {
-    float br = values.get_brightness() * values.get_state();
+    float br = current_vals.get_brightness() * current_vals.get_state();
     this->parent_->set_back_led(br * 255);
   }
 }

@@ -16,6 +16,7 @@ esp32_ble_tracker:
 ble_client:
   - mac_address: D0:0E:71:8D:94:C7
     id: bb8_client
+    auto_connect: false
 
 external_components:
   - source:
@@ -33,12 +34,14 @@ light:
     name: "BB8 Main LED"
     sphero_bb8_id: bb8_hub
     type: RGB
+    default_transition_length: 1s
 
   - platform: sphero_bb8
     id: tail_light
     name: "BB8 Tail Light"
     sphero_bb8_id: bb8_hub
     type: TAILLIGHT
+    default_transition_length: 500ms
 
 button:
   - platform: sphero_bb8
@@ -52,6 +55,8 @@ button:
     type: DISCONNECT
 
 text_sensor:
+
   - platform: sphero_bb8
-    name: "BB8 Status"
+    name: "BB8 Connection Status"
     sphero_bb8_id: bb8_hub
+
