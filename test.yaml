@@ -1,0 +1,38 @@
+esphome:
+  name: bb8-controller
+
+esp32:
+  board: esp32dev
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Bluetooth tracker for finding the BB-8
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: D0:0E:71:8D:94:C7
+    id: bb8_client
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+sphero_bb8:
+  id: bb8_hub
+  ble_client_id: bb8_client
+
+light:
+  - platform: sphero_bb8
+    id: rgb_light
+    name: "BB8 Main LED"
+    sphero_bb8_id: bb8_hub
+    type: RGB
+
+  - platform: sphero_bb8
+    id: tail_light
+    name: "BB8 Tail Light"
+    sphero_bb8_id: bb8_hub
+    type: TAILLIGHT
