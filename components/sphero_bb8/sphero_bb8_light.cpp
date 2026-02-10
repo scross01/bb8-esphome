@@ -17,8 +17,16 @@ light::LightTraits SpheroBB8Light::get_traits() {
 }
 
 void SpheroBB8Light::write_state(light::LightState *state) {
-  if (this->parent_ == nullptr || !this->parent_->is_ready())
+  this->light_state_ = state;
+  if (this->parent_ == nullptr || !this->parent_->is_ready()) {
+    if (state->remote_values.get_state() > 0) {
+      ESP_LOGD(TAG, "Robot not ready, forcing light state back to OFF in UI");
+      auto call = state->make_call();
+      call.set_state(false);
+      call.perform();
+    }
     return;
+  }
 
   auto values = state->remote_values;
   if (this->type_ == "RGB") {

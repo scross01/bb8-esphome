@@ -3,6 +3,8 @@
 #include "esphome/core/component.h"
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
+#include "esphome/components/text_sensor/text_sensor.h"
+#include "esphome/components/button/button.h"
 
 #include <vector>
 
@@ -10,6 +12,8 @@ namespace esphome {
 namespace sphero_bb8 {
 
 namespace espbt = esphome::esp32_ble_tracker;
+
+class SpheroBB8Light;
 
 class SpheroBB8 : public Component, public ble_client::BLEClientNode {
  public:
@@ -24,11 +28,18 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void set_rgb(uint8_t r, uint8_t g, uint8_t b);
   void set_back_led(uint8_t brightness);
 
+  void set_status_sensor(text_sensor::TextSensor *sensor) { status_sensor_ = sensor; }
+  void set_auto_connect(bool auto_connect) { auto_connect_ = auto_connect; }
+  void set_enabled(bool enabled) { enabled_ = enabled; }
+  void register_light(SpheroBB8Light *light) { lights_.push_back(light); }
+
   bool is_ready() const { return state_ == READY; }
 
  protected:
   void send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response = false);
   uint8_t calculate_checksum(uint8_t did, uint8_t cid, uint8_t seq, const std::vector<uint8_t> &data);
+  void update_status_sensor_(const std::string &status);
+  void force_lights_off_();
 
   enum State {
     DISCONNECTED,
@@ -38,6 +49,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
     TX_POWER,
     WAKE,
     READY,
+    DISABLING,
   } state_{DISCONNECTED};
 
   uint16_t char_handle_anti_dos_{0};
@@ -56,6 +68,29 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   uint8_t current_r_{0}, current_g_{0}, current_b_{0};
   uint8_t target_back_brightness_{0};
   uint8_t current_back_brightness_{0};
+
+  text_sensor::TextSensor *status_sensor_{nullptr};
+  std::vector<SpheroBB8Light *> lights_;
+  bool auto_connect_{false};
+  bool enabled_{true};
+  std::string last_status_str_{""};
+};
+
+class SpheroBB8Button : public button::Button, public Component {
+ public:
+  void set_parent(SpheroBB8 *parent) { parent_ = parent; }
+  void set_type(const std::string &type) { type_ = type; }
+  void press_action() override {
+    if (this->type_ == "CONNECT") {
+      this->parent_->set_enabled(true);
+    } else {
+      this->parent_->set_enabled(false);
+    }
+  }
+
+ protected:
+  SpheroBB8 *parent_;
+  std::string type_;
 };
 
 }  // namespace sphero_bb8

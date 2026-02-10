@@ -1,4 +1,5 @@
 #include "sphero_bb8.h"
+#include "sphero_bb8_light.h"
 #include "esphome/core/log.h"
 
 namespace esphome {
@@ -20,6 +21,8 @@ void SpheroBB8::setup() {
   this->current_g_ = 0xFE;
   this->current_b_ = 0xFE;
   this->current_back_brightness_ = 0xFE;
+  this->enabled_ = this->auto_connect_;
+  this->parent()->set_enabled(this->enabled_);
 }
 
 void SpheroBB8::loop() {
@@ -30,7 +33,43 @@ void SpheroBB8::loop() {
     this->write_in_progress_ = false;
   }
 
+  // Handle disabling sequence
+  if (!this->enabled_) {
+    if (this->state_ != DISCONNECTED && this->state_ != DISABLING && this->parent()->connected()) {
+      ESP_LOGI(TAG, "Sending Sleep command before disconnect...");
+      this->state_ = DISABLING;
+      this->last_state_change_ = now;
+      // Sleep command: DID 0x00, CID 0x22, Data [0,0,0,0,0]
+      this->send_packet(0x00, 0x22, {0x00, 0x00, 0x00, 0x00, 0x00}, false);
+      this->force_lights_off_();
+    }
+
+    if (this->state_ == DISABLING && now - this->last_state_change_ > 500) {
+      ESP_LOGI(TAG, "Disconnecting from Sphero BB8...");
+      this->parent()->set_enabled(false);
+      this->state_ = DISCONNECTED;
+    }
+
+    if (this->state_ == DISCONNECTED && this->parent()->enabled) {
+      this->parent()->set_enabled(false);
+    }
+
+    if (this->state_ == DISABLING) {
+      this->update_status_sensor_("Disabling...");
+    } else {
+      this->update_status_sensor_("Disconnected");
+    }
+    return;
+  }
+
+  // Handle re-enabling
+  if (this->enabled_ && !this->parent()->enabled) {
+    ESP_LOGI(TAG, "Enabling BB8 connection...");
+    this->parent()->set_enabled(true);
+  }
+
   if (this->state_ == DISCONNECTED || !this->parent()->connected()) {
+    this->update_status_sensor_("Disconnected");
     return;
   }
   
@@ -41,6 +80,7 @@ void SpheroBB8::loop() {
   // State Machine matching Gobot: Subscribe -> Anti-DOS -> TX Power -> Wake -> Ready
   
   if (this->state_ == SUBSCRIBE && this->char_handle_responses_ != 0) {
+    this->update_status_sensor_("Initializing (Subscribe)");
     ESP_LOGI(TAG, "Subscribing to notifications...");
     auto status = esp_ble_gattc_register_for_notify(this->parent()->get_gattc_if(), 
                                                     this->parent()->get_remote_bda(), 
@@ -52,9 +92,9 @@ void SpheroBB8::loop() {
     this->last_state_change_ = now;
   } 
   else if (this->state_ == ANTI_DOS && this->char_handle_anti_dos_ != 0) {
-    // Wait a bit after subscribe
     if (now - this->last_state_change_ < 200) return;
 
+    this->update_status_sensor_("Initializing (Anti-DOS)");
     ESP_LOGI(TAG, "Sending Anti-DOS...");
     uint8_t anti_dos_payload[] = {'0', '1', '1', 'i', '3'};
     this->write_in_progress_ = true;
@@ -70,6 +110,7 @@ void SpheroBB8::loop() {
     this->last_state_change_ = now;
   }
   else if (this->state_ == TX_POWER && this->char_handle_tx_power_ != 0) {
+    this->update_status_sensor_("Initializing (TX Power)");
     ESP_LOGI(TAG, "Sending TX Power...");
     uint8_t tx_power_payload[] = {7};
     this->write_in_progress_ = true;
@@ -85,6 +126,7 @@ void SpheroBB8::loop() {
     this->last_state_change_ = now;
   }
   else if (this->state_ == WAKE && this->char_handle_wake_ != 0) {
+    this->update_status_sensor_("Initializing (Wake)");
     ESP_LOGI(TAG, "Sending Wake...");
     uint8_t wake_payload[] = {0x01};
     this->write_in_progress_ = true;
@@ -102,9 +144,8 @@ void SpheroBB8::loop() {
     ESP_LOGI(TAG, "Sphero BB8 is Ready!");
   } 
   else if (this->state_ == READY) {
+    this->update_status_sensor_("Ready");
     if (now - this->last_packet_sent_ > 2000) {
-      // Send Ping (Keep Alive) if idle
-      // DID 0x00, CID 0x01
       ESP_LOGV(TAG, "Sending Keep Alive Ping");
       this->send_packet(0x00, 0x01, {}, false);
     } 
@@ -114,7 +155,6 @@ void SpheroBB8::loop() {
 
     if (this->target_r_ != this->current_r_ || this->target_g_ != this->current_g_ || this->target_b_ != this->current_b_) {
       ESP_LOGD(TAG, "Syncing RGB: %d, %d, %d", this->target_r_, this->target_g_, this->target_b_);
-      // Use 0x00 (Temporary) instead of 0x01 (Save to Flash) for rapid updates
       this->send_packet(0x02, 0x20, {this->target_r_, this->target_g_, this->target_b_, 0x00}, false);
       this->current_r_ = this->target_r_;
       this->current_g_ = this->target_g_;
@@ -127,51 +167,56 @@ void SpheroBB8::loop() {
   }
 }
 
+void SpheroBB8::update_status_sensor_(const std::string &status) {
+  if (this->status_sensor_ != nullptr && this->last_status_str_ != status) {
+    this->status_sensor_->publish_state(status);
+    this->last_status_str_ = status;
+  }
+}
+
+void SpheroBB8::force_lights_off_() {
+  for (auto *light : this->lights_) {
+    if (light->light_state_ != nullptr) {
+      if (light->light_state_->remote_values.get_state() > 0) {
+        auto call = light->light_state_->make_call();
+        call.set_state(false);
+        call.perform();
+      }
+    }
+  }
+}
+
 void SpheroBB8::dump_config() {
   ESP_LOGCONFIG(TAG, "Sphero BB8");
   ESP_LOGCONFIG(TAG, "  State: %d", this->state_);
-  ESP_LOGCONFIG(TAG, "  Commands Handle: %d", this->char_handle_commands_);
 }
 
 void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                                     esp_ble_gattc_cb_param_t *param) {
   switch (event) {
-    case ESP_GATTC_SEARCH_RES_EVT: {
-      break;
-    }
     case ESP_GATTC_SEARCH_CMPL_EVT: {
       auto ble_service_uuid = espbt::ESPBTUUID::from_raw(SERVICE_BLE_UUID);
       auto control_service_uuid = espbt::ESPBTUUID::from_raw(SERVICE_CONTROL_UUID);
       
       auto *anti_dos_char = this->parent()->get_characteristic(ble_service_uuid,
                                                                espbt::ESPBTUUID::from_raw(CHAR_ANTI_DOS_UUID));
-      if (anti_dos_char != nullptr) {
-        this->char_handle_anti_dos_ = anti_dos_char->handle;
-      }
+      if (anti_dos_char != nullptr) this->char_handle_anti_dos_ = anti_dos_char->handle;
 
       auto *tx_power_char = this->parent()->get_characteristic(ble_service_uuid,
                                                                espbt::ESPBTUUID::from_raw(CHAR_TX_POWER_UUID));
-      if (tx_power_char != nullptr) {
-        this->char_handle_tx_power_ = tx_power_char->handle;
-      }
+      if (tx_power_char != nullptr) this->char_handle_tx_power_ = tx_power_char->handle;
 
       auto *wake_char = this->parent()->get_characteristic(ble_service_uuid,
                                                            espbt::ESPBTUUID::from_raw(CHAR_WAKE_UUID));
-      if (wake_char != nullptr) {
-        this->char_handle_wake_ = wake_char->handle;
-      }
+      if (wake_char != nullptr) this->char_handle_wake_ = wake_char->handle;
 
       auto *commands_char = this->parent()->get_characteristic(control_service_uuid,
                                                                espbt::ESPBTUUID::from_raw(CHAR_COMMANDS_UUID));
-      if (commands_char != nullptr) {
-        this->char_handle_commands_ = commands_char->handle;
-      }
+      if (commands_char != nullptr) this->char_handle_commands_ = commands_char->handle;
 
       auto *responses_char = this->parent()->get_characteristic(control_service_uuid,
                                                                 espbt::ESPBTUUID::from_raw(CHAR_RESPONSES_UUID));
-      if (responses_char != nullptr) {
-        this->char_handle_responses_ = responses_char->handle;
-      }
+      if (responses_char != nullptr) this->char_handle_responses_ = responses_char->handle;
 
       if (this->char_handle_anti_dos_ && this->char_handle_wake_ && this->char_handle_commands_ && this->char_handle_responses_) {
         ESP_LOGI(TAG, "Found all required characteristics for Sphero BB8");
@@ -185,6 +230,7 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       ESP_LOGI(TAG, "Connected to Sphero BB8");
       this->state_ = CONNECTING;
       this->last_state_change_ = millis();
+      this->update_status_sensor_("Connected");
       break;
     }
     case ESP_GATTC_DISCONNECT_EVT: {
@@ -196,7 +242,9 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       this->char_handle_commands_ = 0;
       this->char_handle_responses_ = 0;
       this->write_in_progress_ = false;
-      this->current_r_ = 0xFE; // Force resync on reconnect
+      this->current_r_ = 0xFE; 
+      this->update_status_sensor_("Disconnected");
+      this->force_lights_off_();
       break;
     }
     case ESP_GATTC_WRITE_CHAR_EVT: {
@@ -228,22 +276,16 @@ void SpheroBB8::set_back_led(uint8_t brightness) {
 }
 
 void SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response) {
-  if (this->char_handle_commands_ == 0) {
-    ESP_LOGW(TAG, "Commands handle not found, cannot send packet");
-    return;
-  }
+  if (this->char_handle_commands_ == 0) return;
 
   uint8_t seq = this->sequence_number_++;
   uint8_t dlen = data.size() + 1;
   uint8_t checksum = this->calculate_checksum(did, cid, seq, data);
 
   std::vector<uint8_t> packet;
-  packet.push_back(0xFF);
-  packet.push_back(0xFF);
-  packet.push_back(did);
-  packet.push_back(cid);
-  packet.push_back(seq);
-  packet.push_back(dlen);
+  packet.push_back(0xFF); packet.push_back(0xFF);
+  packet.push_back(did); packet.push_back(cid);
+  packet.push_back(seq); packet.push_back(dlen);
   packet.insert(packet.end(), data.begin(), data.end());
   packet.push_back(checksum);
 
@@ -261,18 +303,14 @@ void SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t>
                                         write_type, ESP_GATT_AUTH_REQ_NONE);
   if (status != ESP_OK) {
     ESP_LOGE(TAG, "Failed to write command: %d", status);
-    if (wait_for_response) {
-        this->write_in_progress_ = false;
-    }
+    if (wait_for_response) this->write_in_progress_ = false;
   }
   this->last_packet_sent_ = millis();
 }
 
 uint8_t SpheroBB8::calculate_checksum(uint8_t did, uint8_t cid, uint8_t seq, const std::vector<uint8_t> &data) {
   uint32_t sum = did + cid + seq + (data.size() + 1);
-  for (uint8_t b : data) {
-    sum += b;
-  }
+  for (uint8_t b : data) sum += b;
   return ~(sum % 256) & 0xFF;
 }
 

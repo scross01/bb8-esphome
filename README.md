@@ -20,7 +20,7 @@ external_components:
 
 ## Configuration
 
-Setting up your BB-8 requires finding its Bluetooth MAC address and defining the light platforms. Below is a complete example configuration:
+Setting up your BB-8 requires finding its Bluetooth MAC address and defining the platforms. Below is a complete example configuration:
 
 ```yaml
 esp32:
@@ -38,6 +38,7 @@ ble_client:
 sphero_bb8:
   id: bb8_hub
   ble_client_id: bb8_client
+  auto_connect: false
 
 light:
   - platform: sphero_bb8
@@ -51,6 +52,22 @@ light:
     name: "BB-8 Tail Light"
     sphero_bb8_id: bb8_hub
     type: TAILLIGHT
+
+button:
+  - platform: sphero_bb8
+    name: "BB-8 Connect"
+    sphero_bb8_id: bb8_hub
+    type: CONNECT
+
+  - platform: sphero_bb8
+    name: "BB-8 Disconnect"
+    sphero_bb8_id: bb8_hub
+    type: DISCONNECT
+
+text_sensor:
+  - platform: sphero_bb8
+    name: "BB-8 Status"
+    sphero_bb8_id: bb8_hub
 ```
 
 ### Finding the MAC Address
@@ -59,6 +76,32 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 2. Type `scan on` and look for a device named "BB-8" followed by a series of numbers and letters.
 3. Note the MAC address (e.g., `D0:0E:71:8D:94:C7`).
 4. Type `quit` to exit.
+
+## Configuration Variables
+
+### sphero_bb8
+- **id** (Required, ID): The ID to use for this hub.
+- **ble_client_id** (Required, ID): The ID of the `ble_client` that connects to the BB-8.
+- **auto_connect** (Optional, boolean): Whether to automatically connect to the BB-8 on startup. Defaults to `false`.
+
+### light
+- **platform** (Required, string): Must be `sphero_bb8`.
+- **type** (Required, string): Either `RGB` for the main body LED or `TAILLIGHT` for the back LED.
+- **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
+- All other options from [ESPHome Light](https://esphome.io/components/light/index.html).
+
+### button
+- **platform** (Required, string): Must be `sphero_bb8`.
+- **name** (Required, string): The name of the button.
+- **type** (Required, string): Either `CONNECT` or `DISCONNECT`.
+- **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
+- All other options from [ESPHome Button](https://esphome.io/components/button/index.html).
+
+### text_sensor
+- **platform** (Required, string): Must be `sphero_bb8`.
+- **name** (Required, string): The name of the status sensor.
+- **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
+- All other options from [ESPHome Text Sensor](https://esphome.io/components/text_sensor/index.html).
 
 ## Technical Details
 

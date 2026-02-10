@@ -3,6 +3,8 @@ esphome:
 
 esp32:
   board: esp32dev
+  framework:
+    type: esp-idf
 
 # Enable logging
 logger:
@@ -23,6 +25,7 @@ external_components:
 sphero_bb8:
   id: bb8_hub
   ble_client_id: bb8_client
+  auto_connect: false
 
 light:
   - platform: sphero_bb8
@@ -36,3 +39,19 @@ light:
     name: "BB8 Tail Light"
     sphero_bb8_id: bb8_hub
     type: TAILLIGHT
+
+button:
+  - platform: sphero_bb8
+    name: "BB8 Connect"
+    sphero_bb8_id: bb8_hub
+    type: CONNECT
+
+  - platform: sphero_bb8
+    name: "BB8 Disconnect"
+    sphero_bb8_id: bb8_hub
+    type: DISCONNECT
+
+text_sensor:
+  - platform: sphero_bb8
+    name: "BB8 Status"
+    sphero_bb8_id: bb8_hub
