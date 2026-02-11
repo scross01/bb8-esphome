@@ -69,6 +69,15 @@ text_sensor:
   - platform: sphero_bb8
     name: "BB-8 Connection Status"
     sphero_bb8_id: bb8_hub
+    firmware_version:
+      name: "BB-8 Firmware"
+    charging_status:
+      name: "BB-8 Charging Status"
+
+sensor:
+  - platform: sphero_bb8
+    battery_level:
+      name: "BB-8 Battery Level"
 ```
 
 ### Finding the MAC Address
@@ -101,9 +110,16 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 
 ### text_sensor
 - **platform** (Required, string): Must be `sphero_bb8`.
-- **name** (Required, string): The name of the status sensor.
+- **name** (Required, string): The name of the connection status sensor.
+- **firmware_version** (Optional, config): Configuration for the firmware version sensor.
+- **charging_status** (Optional, config): Configuration for the charging status sensor.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
 - All other options from [ESPHome Text Sensor](https://esphome.io/components/text_sensor/index.html).
+
+### sensor
+- **platform** (Required, string): Must be `sphero_bb8`.
+- **battery_level** (Optional, config): Configuration for the battery level sensor.
+- All other options from [ESPHome Sensor](https://esphome.io/components/sensor/index.html).
 
 ## Technical Details
 

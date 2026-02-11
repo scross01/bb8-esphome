@@ -55,8 +55,26 @@ button:
     type: DISCONNECT
 
 text_sensor:
-
   - platform: sphero_bb8
     name: "BB8 Connection Status"
     sphero_bb8_id: bb8_hub
+    firmware_version:
+      name: "BB8 Firmware Version"
+    charging_status:
+      name: "BB8 Charging Status"
+
+binary_sensor:
+  - platform: sphero_bb8
+    name: "BB8 Collision"
+    id: bb8_collision
+
+sensor:
+  - platform: sphero_bb8
+    battery_level:
+      name: "BB8 Battery Level"
+    collision_speed:
+      name: "BB8 Collision Speed"
+    collision_magnitude:
+      name: "BB8 Collision Magnitude"
+
 

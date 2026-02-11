@@ -16,6 +16,13 @@ static const char *const CHAR_WAKE_UUID = "22bb746f-2bbf-7554-2d6f-726568705327"
 static const char *const CHAR_COMMANDS_UUID = "22bb746f-2ba1-7554-2d6f-726568705327";
 static const char *const CHAR_RESPONSES_UUID = "22bb746f-2ba6-7554-2d6f-726568705327";
 
+static const uint8_t DID_CORE = 0x00;
+static const uint8_t DID_SPHERO = 0x02;
+static const uint8_t CID_VERSION = 0x02;
+static const uint8_t CID_GET_POWER_STATE = 0x20;
+static const uint8_t CID_SET_POWER_NOTIFY = 0x21;
+static const uint8_t CID_CONFIG_COLLISION = 0x12;
+
 void SpheroBB8::setup() {
   this->current_r_ = 0xFE;
   this->current_g_ = 0xFE;
@@ -37,6 +44,9 @@ void SpheroBB8::disconnect() {
   ESP_LOGI(TAG, "Disconnect button pressed, disabling BB8 connection...");
   this->enabled_ = false;
   this->parent()->set_auto_connect(false);
+  this->version_requested_ = false;
+  this->power_notify_enabled_ = false;
+  this->collision_config_sent_ = false;
 }
 
 void SpheroBB8::loop() {
@@ -78,6 +88,9 @@ void SpheroBB8::loop() {
   if (!this->parent()->connected()) {
     this->state_ = DISCONNECTED;
     this->update_status_sensor_("Connecting");
+    this->version_requested_ = false;
+    this->power_notify_enabled_ = false;
+    this->collision_config_sent_ = false;
     return;
   }
   
@@ -153,6 +166,7 @@ void SpheroBB8::loop() {
       this->state_ = READY;
       this->last_state_change_ = now;
       this->last_packet_sent_ = now;
+      this->last_power_check_ = now - 60000; // Force immediate check
       ESP_LOGI(TAG, "Sphero BB8 is Ready!");
     } else {
       ESP_LOGV(TAG, "Initialization State: Stabilizing (%dms remaining)", 2000 - (now - this->last_state_change_));
@@ -160,6 +174,39 @@ void SpheroBB8::loop() {
   }
   else if (this->state_ == READY) {
     this->update_status_sensor_("Ready");
+    
+    // Enable Power Notifications Once
+    if (!this->power_notify_enabled_) {
+        ESP_LOGD(TAG, "Enabling Power Notifications");
+        this->send_packet(DID_CORE, CID_SET_POWER_NOTIFY, {0x01});
+        this->power_notify_enabled_ = true;
+    }
+
+    // Configure Collision Detection Once
+    if (!this->collision_config_sent_) {
+        this->configure_collision_detection_();
+        this->collision_config_sent_ = true;
+    }
+
+    // Auto-reset collision sensor
+    if (this->collision_sensor_ != nullptr && this->collision_sensor_->state && now - this->last_collision_time_ > 500) {
+        this->collision_sensor_->publish_state(false);
+    }
+
+    // Poll Battery
+    if (now - this->last_power_check_ > 60000) {
+      ESP_LOGD(TAG, "Polling Battery");
+      this->power_req_seq_ = this->send_packet(DID_CORE, CID_GET_POWER_STATE, {});
+      this->last_power_check_ = now;
+    }
+
+    // Get Version Once
+    if (!this->version_requested_ && now - this->last_state_change_ > 3000) {
+      ESP_LOGD(TAG, "Requesting Firmware Version");
+      this->version_req_seq_ = this->send_packet(DID_CORE, CID_VERSION, {});
+      this->version_requested_ = true;
+    }
+
     if (now - this->last_packet_sent_ > 2000) {
       ESP_LOGV(TAG, "Sending Keep Alive Ping");
       this->send_packet(0x00, 0x01, {}, false);
@@ -180,6 +227,17 @@ void SpheroBB8::loop() {
       this->current_back_brightness_ = this->target_back_brightness_;
     }
   }
+}
+
+void SpheroBB8::configure_collision_detection_() {
+    ESP_LOGD(TAG, "Configuring Collision Detection");
+    // Method: 0x01 (Enable)
+    // Xt (Threshold): 0x64 (100)
+    // Xspd (Speed): 0x64 (100)
+    // Yt (Threshold): 0x64 (100)
+    // Yspd (Speed): 0x64 (100)
+    // DeadTime: 0x32 (50 * 10ms = 500ms)
+    this->send_packet(DID_SPHERO, CID_CONFIG_COLLISION, {0x01, 0x64, 0x64, 0x64, 0x64, 0x32});
 }
 
 void SpheroBB8::update_status_sensor_(const std::string &status) {
@@ -204,6 +262,12 @@ void SpheroBB8::force_lights_off_() {
 void SpheroBB8::dump_config() {
   ESP_LOGCONFIG(TAG, "Sphero BB8");
   ESP_LOGCONFIG(TAG, "  State: %d", this->state_);
+  LOG_SENSOR("  ", "Battery Level", this->battery_sensor_);
+  LOG_TEXT_SENSOR("  ", "Firmware Version", this->version_sensor_);
+  LOG_TEXT_SENSOR("  ", "Charging Status", this->charging_status_sensor_);
+  LOG_BINARY_SENSOR("  ", "Collision Detected", this->collision_sensor_);
+  LOG_SENSOR("  ", "Collision Speed", this->collision_speed_sensor_);
+  LOG_SENSOR("  ", "Collision Magnitude", this->collision_magnitude_sensor_);
 }
 
 void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
@@ -258,6 +322,9 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       this->char_handle_responses_ = 0;
       this->write_in_progress_ = false;
       this->current_r_ = 0xFE; 
+      this->version_requested_ = false;
+      this->power_notify_enabled_ = false;
+      this->collision_config_sent_ = false;
       this->update_status_sensor_("Disconnected");
       this->force_lights_off_();
       break;
@@ -271,6 +338,13 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
       ESP_LOGI(TAG, "Registered for notifications");
+      break;
+    }
+    case ESP_GATTC_NOTIFY_EVT: {
+      if (param->notify.handle == this->char_handle_responses_) {
+        std::vector<uint8_t> data(param->notify.value, param->notify.value + param->notify.value_len);
+        this->handle_packet_(data);
+      }
       break;
     }
     default:
@@ -290,8 +364,8 @@ void SpheroBB8::set_back_led(uint8_t brightness) {
   this->target_back_brightness_ = brightness;
 }
 
-void SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response) {
-  if (this->char_handle_commands_ == 0) return;
+uint8_t SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response) {
+  if (this->char_handle_commands_ == 0) return 0;
 
   uint8_t seq = this->sequence_number_++;
   uint8_t dlen = data.size() + 1;
@@ -321,12 +395,174 @@ void SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t>
     if (wait_for_response) this->write_in_progress_ = false;
   }
   this->last_packet_sent_ = millis();
+  return seq;
 }
 
 uint8_t SpheroBB8::calculate_checksum(uint8_t did, uint8_t cid, uint8_t seq, const std::vector<uint8_t> &data) {
   uint32_t sum = did + cid + seq + (data.size() + 1);
   for (uint8_t b : data) sum += b;
   return ~(sum % 256) & 0xFF;
+}
+
+void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {
+  this->packet_buffer_.insert(this->packet_buffer_.end(), data.begin(), data.end());
+
+  while (this->packet_buffer_.size() >= 5) {
+      // Check SOP
+      if (this->packet_buffer_[0] != 0xFF || (this->packet_buffer_[1] != 0xFF && this->packet_buffer_[1] != 0xFE)) {
+          // Invalid start, shift by 1 to find next SOP
+          this->packet_buffer_.erase(this->packet_buffer_.begin());
+          continue;
+      }
+
+      // Parse Length
+      uint8_t sop2 = this->packet_buffer_[1];
+      size_t packet_len = 0;
+
+      if (sop2 == 0xFF) { // Sync
+          uint8_t dlen = this->packet_buffer_[4];
+          packet_len = 5 + dlen;
+      } else { // Async (0xFE)
+          uint16_t dlen = (this->packet_buffer_[3] << 8) | this->packet_buffer_[4];
+          packet_len = 5 + dlen;
+      }
+
+      if (this->packet_buffer_.size() < packet_len) {
+          // Incomplete packet, wait for more data
+          return;
+      }
+
+      // Extract complete packet
+      std::vector<uint8_t> packet(this->packet_buffer_.begin(), this->packet_buffer_.begin() + packet_len);
+      this->packet_buffer_.erase(this->packet_buffer_.begin(), this->packet_buffer_.begin() + packet_len);
+
+      this->process_packet_(packet);
+  }
+}
+
+void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
+  // Debug dump
+  std::string hex_dump = "";
+  for (uint8_t b : data) {
+    char buf[4];
+    sprintf(buf, "%02X ", b);
+    hex_dump += buf;
+  }
+  ESP_LOGD(TAG, "Processing Packet: %s", hex_dump.c_str());
+
+  if (data.size() < 5) return;
+  
+  // Async Packet (Notification)
+  if (data[0] == 0xFF && data[1] == 0xFE) {
+     uint8_t id_code = data[2];
+     uint16_t length = (data[3] << 8) | data[4];
+     
+     // Async Power Notification
+     if (id_code == 0x01 && length >= 1) {
+         uint8_t state = data[5];
+         ESP_LOGI(TAG, "Received Async Power Notification: State=0x%02X", state);
+         
+         if (this->charging_status_sensor_ != nullptr) {
+            std::string status = "Unknown";
+            if (state == 0x01) status = "Charging";
+            else if (state == 0x02) status = "OK";
+            else if (state == 0x03) status = "Low";
+            else if (state == 0x04) status = "Critical";
+            this->charging_status_sensor_->publish_state(status);
+         }
+    
+         if (this->battery_sensor_ != nullptr) {
+            float level = 0.0f;
+            if (state == 0x01) level = 100.0f;
+            else if (state == 0x02) level = 100.0f;
+            else if (state == 0x03) level = 20.0f;
+            else if (state == 0x04) level = 5.0f;
+            this->battery_sensor_->publish_state(level);
+         }
+     }
+     // Async Collision Notification
+     else if (id_code == 0x07 && length >= 1) {
+         ESP_LOGI(TAG, "Received Async Collision Notification");
+         if (this->collision_sensor_ != nullptr) {
+             this->collision_sensor_->publish_state(true);
+             this->last_collision_time_ = millis();
+         }
+
+         // Payload parsing (Standard 16-byte structure)
+         // X(2), Y(2), Z(2), Axis(1), MagX(2), MagY(2), Speed(1), Time(4)
+         if (data.size() >= 5 + 16) { 
+             int16_t mag_x = (int16_t)((data[12] << 8) | data[13]);
+             int16_t mag_y = (int16_t)((data[14] << 8) | data[15]);
+             uint8_t speed = data[16];
+             
+             ESP_LOGD(TAG, "Collision Data: MagX=%d MagY=%d Speed=%d", mag_x, mag_y, speed);
+             
+             if (this->collision_speed_sensor_ != nullptr) {
+                 this->collision_speed_sensor_->publish_state(speed);
+             }
+             
+             if (this->collision_magnitude_sensor_ != nullptr) {
+                 float magnitude = std::sqrt(mag_x*mag_x + mag_y*mag_y);
+                 this->collision_magnitude_sensor_->publish_state(magnitude);
+             }
+         }
+     }
+     return;
+  }
+
+  // Sync Packet (Response)
+  if (data[0] != 0xFF || data[1] != 0xFF) return;
+
+  uint8_t mrp = data[2];
+  uint8_t seq = data[3];
+  uint8_t dlen = data[4];
+  
+  if (mrp != 0x00) {
+    ESP_LOGW(TAG, "Received error response code: 0x%02X for sequence %d", mrp, seq);
+    return;
+  }
+
+  if (data.size() < 5 + dlen) return;
+
+  if (seq == this->power_req_seq_) {
+    if (dlen >= 3) {
+      uint8_t rec_state = data[5];
+      uint8_t power_state = data[6];
+      ESP_LOGD(TAG, "Received Power State: RecState=0x%02X, PowerState=0x%02X", rec_state, power_state);
+
+      if (this->charging_status_sensor_ != nullptr) {
+        std::string status = "Unknown";
+        if (rec_state == 0x01) status = "Charging";
+        else if (rec_state == 0x02) status = "OK";
+        else if (rec_state == 0x03) status = "Low";
+        else if (rec_state == 0x04) status = "Critical";
+        this->charging_status_sensor_->publish_state(status);
+      }
+
+      if (this->battery_sensor_ != nullptr) {
+        float level = 0.0f;
+        if (rec_state == 0x01) level = 100.0f;
+        else if (rec_state == 0x02) level = 100.0f;
+        else if (rec_state == 0x03) level = 20.0f;
+        else if (rec_state == 0x04) level = 5.0f;
+        this->battery_sensor_->publish_state(level);
+      }
+    }
+  } 
+  else if (seq == this->version_req_seq_) {
+     if (dlen >= 6 && data.size() >= 10) {
+       uint8_t maj = data[8];
+       uint8_t min = data[9];
+       char buffer[16];
+       snprintf(buffer, sizeof(buffer), "%d.%d", maj, min);
+       ESP_LOGI(TAG, "Received Firmware Version: %s", buffer);
+       if (this->version_sensor_ != nullptr) {
+         this->version_sensor_->publish_state(buffer);
+       }
+     } else {
+       ESP_LOGW(TAG, "Received Version packet but too short (DLEN=%d, Size=%d)", dlen, data.size());
+     }
+  }
 }
 
 }  // namespace sphero_bb8

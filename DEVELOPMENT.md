@@ -95,6 +95,37 @@ uint8_t checksum = ~(sum(DID + CID + SEQ + DLEN + DATA...) % 256);
 | **Ping** | `0x00` | `0x01` | `[]` | Used for Keep-Alive. |
 | **Sleep** | `0x00` | `0x22` | `[0,0,0,0,0]` | Puts droid into low-power sleep mode. |
 | **Roll** | `0x02` | `0x30` | `[SPEED, HEAD_H, HEAD_L, STATE]` | `SPEED`: 0-255. `HEAD`: 0-359. |
+| **Get Power**| `0x00` | `0x20` | `[]` | Requests current power state (Charging, OK, Low, Critical). |
+| **Set Pwr Notify**| `0x00` | `0x21` | `[ENABLE]` | `ENABLE`: `0x01` to subscribe to async power updates. |
+| **Get Version**| `0x00` | `0x02` | `[]` | Requests version info. MSA Version (Main App) is parsed from response. |
+| **Config Collision**| `0x02` | `0x12` | `[METH, Xt, Xs, Yt, Ys, DT]` | Configures collision detection service. |
+
+### Sensors & Notifications
+
+The component implements several sensors to report the droid's status:
+
+1.  **Battery Level & Charging Status**:
+    *   **Polling**: The hub polls the power state (`Get Power State`) every 60 seconds.
+    *   **Asynchronous Updates**: On connection, the hub enables power notifications (`Set Power Notification`). This allows the droid to push updates immediately when charging starts/stops or battery level changes.
+    *   **Packet Handling**: The `process_packet_` method detects asynchronous packets by checking for `SOP2 = 0xFE`. It parses the payload (State Code) to update the sensors:
+        *   `0x01`: Charging (100%)
+        *   `0x02`: OK (100%)
+        *   `0x03`: Low (20%)
+        *   `0x04`: Critical (5%)
+
+2.  **Firmware Version**:
+    *   Requested once, 3 seconds after the connection is established.
+    *   The packet sequence number is tracked (`version_req_seq_`) to correctly identify the response amidst other traffic.
+    *   The Main Application (MSA) version bytes are extracted from the payload indices 8 and 9.
+
+3.  **Collision Detection**:
+    *   **Configuration**: Upon connection, the component sends `CID_CONFIG_COLLISION` (`0x12`) to enable the service with default thresholds (100) and deadtime (500ms).
+    *   **Async Notifications**: The droid sends an async packet with ID `0x07` upon impact.
+    *   **Sensors**:
+        *   **Binary Sensor**: Toggles to `True` on impact and auto-resets to `False` after 500ms.
+        *   **Collision Speed**: Reports the impact speed (0-255).
+        *   **Collision Magnitude**: Reports the vector magnitude ($\sqrt{x^2 + y^2}$) of the impact force.
+    *   **Packet Buffer**: A rolling buffer (`packet_buffer_`) is used to reassemble split BLE notifications, ensuring robust parsing of the multi-byte collision payload.
 
 ## Technical Implementation Details
 
