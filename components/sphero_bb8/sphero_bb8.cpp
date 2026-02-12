@@ -6,217 +6,6 @@
 namespace esphome {
 namespace sphero_bb8 {
 
-static const char *const SCRIPT_EXECUTOR_TAG = "sphero_bb8.script";
-
-// Inline implementation of ScriptExecutor methods
-ScriptExecutor::ScriptExecutor() {}
-
-void ScriptExecutor::add_script(const Script &script) {
-  scripts_.push_back(script);
-  ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Added script: %s with %zu steps", script.name.c_str(), script.steps.size());
-}
-
-bool ScriptExecutor::execute_script(const std::string &name) {
-  if (state_ != ScriptState::IDLE) {
-    ESP_LOGW(SCRIPT_EXECUTOR_TAG, "Stopping current script to start new script: %s", name.c_str());
-    stop_current_script();
-  }
-
-  // Find the script by name
-  for (size_t i = 0; i < scripts_.size(); i++) {
-    if (scripts_[i].name == name) {
-      current_script_index_ = i;
-      current_step_index_ = 0;
-      state_ = ScriptState::RUNNING;
-
-      // Clear repeat stack
-      while (!repeat_stack_.empty()) {
-        repeat_stack_.pop();
-      }
-
-      ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Starting script execution: %s", name.c_str());
-      return true;
-    }
-  }
-
-  ESP_LOGW(SCRIPT_EXECUTOR_TAG, "Script not found: %s", name.c_str());
-  return false;
-}
-
-void ScriptExecutor::stop_current_script() {
-  if (state_ != ScriptState::IDLE) {
-    ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Stopping current script");
-    state_ = ScriptState::IDLE;
-    current_script_index_ = 0;
-    current_step_index_ = 0;
-
-    // Clear repeat stack
-    while (!repeat_stack_.empty()) {
-      repeat_stack_.pop();
-    }
-  }
-}
-
-void ScriptExecutor::loop() {
-  if (state_ != ScriptState::RUNNING) {
-    return;
-  }
-
-  // Check if we're currently waiting
-  if (wait_duration_ > 0) {
-    if (millis() - wait_start_time_ >= wait_duration_) {
-      // Wait is over, reset and continue to next step
-      wait_duration_ = 0;
-      execute_next_step_();
-    }
-    return;
-  }
-
-  // Execute the current step if we're not waiting
-  execute_next_step_();
-}
-
-void ScriptExecutor::execute_next_step_() {
-  if (current_script_index_ >= scripts_.size()) {
-    state_ = ScriptState::FINISHED;
-    ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Script execution finished");
-    return;
-  }
-
-  Script &current_script = scripts_[current_script_index_];
-
-  // Check if we have a repeat in progress
-  if (!repeat_stack_.empty()) {
-    auto &top = repeat_stack_.top();
-    size_t repeat_step_idx = top.first;
-    size_t remaining_iterations = top.second;
-
-    if (remaining_iterations > 0) {
-      // Execute the repeated step
-      const ScriptAction &action = current_script.steps[repeat_step_idx];
-      execute_action_(action);
-
-      // Update the repeat count
-      top.second--;
-
-      // If iterations are done, pop from stack and advance to next step
-      if (top.second == 0) {
-        repeat_stack_.pop();
-        current_step_index_ = repeat_step_idx + 1;
-      }
-      return;
-    }
-  }
-
-  // Check if we've reached the end of the script
-  if (current_step_index_ >= current_script.steps.size()) {
-    state_ = ScriptState::FINISHED;
-    ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Script execution finished");
-    return;
-  }
-
-  const ScriptAction &action = current_script.steps[current_step_index_];
-
-  // Handle repeat action specially
-  if (action.type == ScriptActionType::REPEAT) {
-    // Push to repeat stack: (step_index_after_repeat, remaining_iterations)
-    repeat_stack_.push(std::make_pair(current_step_index_ + 1, action.repeat_count));
-
-    // Execute the first iteration of the repeat steps
-    for (const auto &repeat_step : action.repeat_steps) {
-      execute_action_(repeat_step);
-    }
-
-    // Decrement the repeat count since we just executed one iteration
-    repeat_stack_.top().second--;
-
-    // If no more iterations needed, pop from stack
-    if (repeat_stack_.top().second == 0) {
-      repeat_stack_.pop();
-    }
-
-    current_step_index_++; // Move past the repeat action
-    return;
-  }
-
-  // Execute the current action
-  execute_action_(action);
-
-  // Advance to next step
-  current_step_index_++;
-}
-
-void ScriptExecutor::execute_action_(const ScriptAction &action) {
-  if (parent_ == nullptr) {
-    ESP_LOGE(SCRIPT_EXECUTOR_TAG, "Parent not set, cannot execute action");
-    return;
-  }
-
-  switch (action.type) {
-    case ScriptActionType::ROLL:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing roll: speed=%d, heading=%d", action.roll_speed, action.roll_heading);
-      parent_->send_packet(0x02, 0x30, {action.roll_speed, (uint8_t)(action.roll_heading >> 8),
-                                       (uint8_t)(action.roll_heading & 0xFF), 0x01}, false);
-      break;
-
-    case ScriptActionType::STOP:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing stop");
-      parent_->send_packet(0x02, 0x30, {0x00, 0x00, 0x00, 0x01}, false);
-      break;
-
-    case ScriptActionType::SPIN:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing spin: rate=%d", action.spin_rate);
-      parent_->send_packet(0x02, 0x03, {action.spin_rate}, false);
-      break;
-
-    case ScriptActionType::RAW_MOTOR:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing raw motor: left=%d, right=%d", action.left_speed, action.right_speed);
-      parent_->send_packet(0x02, 0x33, {0x01, action.left_speed, 0x01, action.right_speed}, false); // Forward mode for both
-      break;
-
-    case ScriptActionType::SET_HEADING:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing set heading: %d", action.heading);
-      parent_->send_packet(0x02, 0x01, {(uint8_t)(action.heading >> 8), (uint8_t)(action.heading & 0xFF)}, false);
-      break;
-
-    case ScriptActionType::LIGHT:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing light: r=%d, g=%d, b=%d", action.red, action.green, action.blue);
-      parent_->set_rgb(action.red, action.green, action.blue);
-      break;
-
-    case ScriptActionType::BACK_LIGHT:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing back light: brightness=%d", action.brightness);
-      parent_->set_back_led(action.brightness);
-      break;
-
-    case ScriptActionType::CENTER_HEAD:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing center head");
-      parent_->center_head();
-      break;
-
-    case ScriptActionType::STABILIZE:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing stabilize: %s", action.stabilize_state ? "ON" : "OFF");
-      parent_->send_packet(0x02, 0x02, {action.stabilize_state ? 0x01 : 0x00}, false);
-      break;
-
-    case ScriptActionType::WAIT:
-      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing wait: %d ms", action.duration_ms);
-      wait_start_time_ = millis();
-      wait_duration_ = action.duration_ms;
-      break;
-
-    case ScriptActionType::REPEAT:
-      // Handled separately in execute_next_step_
-      break;
-  }
-}
-
-}  // namespace sphero_bb8
-}  // namespace esphome
-
-namespace esphome {
-namespace sphero_bb8 {
-
 static const char *const TAG = "sphero_bb8";
 
 static const char *const SERVICE_BLE_UUID = "22bb746f-2bb0-7554-2d6f-726568705327";
@@ -421,6 +210,9 @@ void SpheroBB8::loop() {
       this->version_requested_ = true;
     }
 
+    // Run script executor (Before 50ms rate limit)
+    this->script_executor_.loop();
+
     if (now - this->last_packet_sent_ > 2000) {
       ESP_LOGV(TAG, "Sending Keep Alive Ping");
       this->send_packet(0x00, 0x01, {}, false);
@@ -440,27 +232,16 @@ void SpheroBB8::loop() {
       this->send_packet(0x02, 0x21, {this->target_back_brightness_}, false);
       this->current_back_brightness_ = this->target_back_brightness_;
     }
-    
-    // Run script executor
-    this->script_executor_.loop();
   }
 }
 
 void SpheroBB8::configure_collision_detection_() {
     ESP_LOGD(TAG, "Configuring Collision Detection");
-    // Method: 0x01 (Enable)
-    // Xt (Threshold): 0x64 (100)
-    // Xspd (Speed): 0x64 (100)
-    // Yt (Threshold): 0x64 (100)
-    // Yspd (Speed): 0x64 (100)
-    // DeadTime: 0x32 (50 * 10ms = 500ms)
     this->send_packet(DID_SPHERO, CID_CONFIG_COLLISION, {0x01, 0x64, 0x64, 0x64, 0x64, 0x32});
 }
 
 void SpheroBB8::center_head() {
     ESP_LOGI(TAG, "Centering Head (Self Level)...");
-    // DID 0x02, CID 0x09
-    // Payload: [0x01, 0x00, 0x00, 0x00] -> Options: Start, AngleLimit: 0, Timeout: 0, TrueTime: 0
     this->send_packet(DID_SPHERO, CID_SET_SELF_LEVEL, {0x01, 0x00, 0x00, 0x00}, false);
 }
 
@@ -595,21 +376,25 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
 }
 
 void SpheroBB8::set_rgb(uint8_t r, uint8_t g, uint8_t b) {
-  ESP_LOGV(TAG, "Setting RGB target: %d, %d, %d", r, g, b);
-  this->target_r_ = r;
-  this->target_g_ = g;
-  this->target_b_ = b;
+  this->stop_script();
+  this->set_rgb_internal(r, g, b);
 }
 
 void SpheroBB8::set_back_led(uint8_t brightness) {
-  ESP_LOGV(TAG, "Setting Back LED target: %d", brightness);
-  this->target_back_brightness_ = brightness;
+  this->stop_script();
+  this->set_back_led_internal(brightness);
 }
 
 uint8_t SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response) {
   if (this->char_handle_commands_ == 0) return 0;
 
+  if (this->write_in_progress_) {
+    return 0;
+  }
+
   uint8_t seq = this->sequence_number_++;
+  if (seq == 0) seq = this->sequence_number_++; // Skip 0
+
   uint8_t dlen = data.size() + 1;
   uint8_t checksum = this->calculate_checksum(did, cid, seq, data);
 
@@ -635,6 +420,7 @@ uint8_t SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8
   if (status != ESP_OK) {
     ESP_LOGE(TAG, "Failed to write command: %d", status);
     if (wait_for_response) this->write_in_progress_ = false;
+    return 0;
   }
   this->last_packet_sent_ = millis();
   return seq;
@@ -650,14 +436,11 @@ void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {
   this->packet_buffer_.insert(this->packet_buffer_.end(), data.begin(), data.end());
 
   while (this->packet_buffer_.size() >= 5) {
-      // Check SOP
       if (this->packet_buffer_[0] != 0xFF || (this->packet_buffer_[1] != 0xFF && this->packet_buffer_[1] != 0xFE)) {
-          // Invalid start, shift by 1 to find next SOP
           this->packet_buffer_.erase(this->packet_buffer_.begin());
           continue;
       }
 
-      // Parse Length
       uint8_t sop2 = this->packet_buffer_[1];
       size_t packet_len = 0;
 
@@ -670,11 +453,9 @@ void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {
       }
 
       if (this->packet_buffer_.size() < packet_len) {
-          // Incomplete packet, wait for more data
           return;
       }
 
-      // Extract complete packet
       std::vector<uint8_t> packet(this->packet_buffer_.begin(), this->packet_buffer_.begin() + packet_len);
       this->packet_buffer_.erase(this->packet_buffer_.begin(), this->packet_buffer_.begin() + packet_len);
 
@@ -683,33 +464,14 @@ void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {
 }
 
 void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
-  // Debug dump
-  std::string hex_dump = "";
-  for (uint8_t b : data) {
-    char buf[4];
-    sprintf(buf, "%02X ", b);
-    hex_dump += buf;
-  }
-  // Check if it's a simple ACK packet (SOP1=FF, SOP2=FF, MRSP=00, SEQ, DLEN=01, CHK)
-  // 6 bytes total, no payload, success code.
-  if (data.size() == 6 && data[0] == 0xFF && data[1] == 0xFF && data[2] == 0x00 && data[4] == 0x01) {
-    ESP_LOGV(TAG, "Processing Packet: %s", hex_dump.c_str());
-  } else {
-    ESP_LOGD(TAG, "Processing Packet: %s", hex_dump.c_str());
-  }
-
   if (data.size() < 5) return;
   
-  // Async Packet (Notification)
   if (data[0] == 0xFF && data[1] == 0xFE) {
      uint8_t id_code = data[2];
      uint16_t length = (data[3] << 8) | data[4];
      
-     // Async Power Notification
      if (id_code == 0x01 && length >= 1) {
          uint8_t state = data[5];
-         ESP_LOGI(TAG, "Received Async Power Notification: State=0x%02X", state);
-         
          if (this->charging_status_sensor_ != nullptr) {
             std::string status = "Unknown";
             if (state == 0x01) status = "Charging";
@@ -718,37 +480,25 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
             else if (state == 0x04) status = "Critical";
             this->charging_status_sensor_->publish_state(status);
          }
-    
          if (this->battery_sensor_ != nullptr) {
             float level = 0.0f;
-            if (state == 0x01) return; // Don't jump to 100% when charging starts, wait for poll
+            if (state == 0x01) return;
             else if (state == 0x02) level = 100.0f;
             else if (state == 0x03) level = 10.0f;
             else if (state == 0x04) level = 1.0f;
             this->battery_sensor_->publish_state(level);
          }
      }
-     // Async Collision Notification
      else if (id_code == 0x07 && length >= 1) {
-         ESP_LOGI(TAG, "Received Async Collision Notification");
          if (this->collision_sensor_ != nullptr) {
              this->collision_sensor_->publish_state(true);
              this->last_collision_time_ = millis();
          }
-
-         // Payload parsing (Standard 16-byte structure)
-         // X(2), Y(2), Z(2), Axis(1), MagX(2), MagY(2), Speed(1), Time(4)
          if (data.size() >= 5 + 16) { 
              int16_t mag_x = (int16_t)((data[12] << 8) | data[13]);
              int16_t mag_y = (int16_t)((data[14] << 8) | data[15]);
              uint8_t speed = data[16];
-             
-             ESP_LOGD(TAG, "Collision Data: MagX=%d MagY=%d Speed=%d", mag_x, mag_y, speed);
-             
-             if (this->collision_speed_sensor_ != nullptr) {
-                 this->collision_speed_sensor_->publish_state(speed);
-             }
-             
+             if (this->collision_speed_sensor_ != nullptr) this->collision_speed_sensor_->publish_state(speed);
              if (this->collision_magnitude_sensor_ != nullptr) {
                  float magnitude = std::sqrt(mag_x*mag_x + mag_y*mag_y);
                  this->collision_magnitude_sensor_->publish_state(magnitude);
@@ -758,28 +508,20 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
      return;
   }
 
-  // Sync Packet (Response)
   if (data[0] != 0xFF || data[1] != 0xFF) return;
 
   uint8_t mrp = data[2];
   uint8_t seq = data[3];
   uint8_t dlen = data[4];
   
-  if (mrp != 0x00) {
-    ESP_LOGW(TAG, "Received error response code: 0x%02X for sequence %d", mrp, seq);
-    return;
-  }
-
+  if (mrp != 0x00) return;
   if (data.size() < 5 + dlen) return;
 
   if (seq == this->power_req_seq_) {
     if (dlen >= 3) {
-      uint8_t rec_ver = data[5];
       uint8_t power_state = data[6];
       uint16_t voltage_raw = (data[7] << 8) | data[8];
       float voltage = voltage_raw / 100.0f;
-      ESP_LOGD(TAG, "Received Power State: RecVer=0x%02X, PowerState=0x%02X, Voltage=%.2fV", rec_ver, power_state, voltage);
-
       if (this->charging_status_sensor_ != nullptr) {
         std::string status = "Unknown";
         if (power_state == 0x01) status = "Charging";
@@ -788,29 +530,12 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
         else if (power_state == 0x04) status = "Critical";
         this->charging_status_sensor_->publish_state(status);
       }
-
       if (this->battery_sensor_ != nullptr) {
         float level = 0.0f;
-        
-        // Estimate level from voltage
-        // For 2S: 7.0V (empty) to 8.4V (full)
-        // For 1S: 3.5V (empty) to 4.2V (full)
-        if (voltage > 5.0f) { // Likely 2S
-            level = (voltage - 7.0f) / (8.4f - 7.0f) * 100.0f;
-        } else if (voltage > 2.0f) { // Likely 1S
-            level = (voltage - 3.5f) / (4.2f - 3.5f) * 100.0f;
-        }
-        
+        if (voltage > 5.0f) level = (voltage - 7.0f) / (8.4f - 7.0f) * 100.0f;
+        else if (voltage > 2.0f) level = (voltage - 3.5f) / (4.2f - 3.5f) * 100.0f;
         if (level > 100.0f) level = 100.0f;
         if (level < 0.0f) level = 0.0f;
-        
-        // If we don't have a good voltage (e.g. 0), fallback to state
-        if (voltage < 1.0f) {
-            if (power_state == 0x01 || power_state == 0x02) level = 100.0f;
-            else if (power_state == 0x03) level = 10.0f;
-            else if (power_state == 0x04) level = 1.0f;
-        }
-
         this->battery_sensor_->publish_state(level);
       }
     }
@@ -820,15 +545,8 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
        uint8_t maj = data[8];
        uint8_t min = data[9];
        char buffer[16];
-       // BB-8 (Ray) firmware version is reported as Major.Minor (e.g., 4.69).
-       // The official Android app appends a ".0" revision to this for display.
        snprintf(buffer, sizeof(buffer), "%d.%d.0", maj, min);
-       ESP_LOGI(TAG, "Received Firmware Version: %s (Raw DLEN=%d)", buffer, dlen);
-       if (this->version_sensor_ != nullptr) {
-         this->version_sensor_->publish_state(buffer);
-       }
-     } else {
-       ESP_LOGW(TAG, "Received Version packet but too short (DLEN=%d, Size=%d)", dlen, data.size());
+       if (this->version_sensor_ != nullptr) this->version_sensor_->publish_state(buffer);
      }
   }
 }

@@ -4,7 +4,7 @@
 #include "esphome/core/helpers.h"
 #include <vector>
 #include <stack>
-#include <queue>
+#include <string>
 
 namespace esphome {
 namespace sphero_bb8 {
@@ -86,19 +86,20 @@ class ScriptExecutor {
   void set_parent(class SpheroBB8 *parent) { parent_ = parent; }
 
  protected:
-  void execute_next_step_();
-  void execute_action_(const ScriptAction &action);
-  void handle_repeat_();
+  struct ExecutionFrame {
+    const std::vector<ScriptAction> *steps;
+    size_t step_index;
+    uint8_t remaining_repeats;
+  };
+
+  bool execute_action_(const ScriptAction &action);
   
   std::vector<Script> scripts_;
   ScriptState state_{ScriptState::IDLE};
-  size_t current_script_index_{0};
-  size_t current_step_index_{0};
+  std::stack<ExecutionFrame> frames_;
+  
   uint32_t wait_start_time_{0};
   uint32_t wait_duration_{0};
-  
-  // Repeat handling
-  std::stack<std::pair<size_t, size_t>> repeat_stack_; // Stores (step_index, remaining_iterations)
   
   class SpheroBB8 *parent_{nullptr};
 };

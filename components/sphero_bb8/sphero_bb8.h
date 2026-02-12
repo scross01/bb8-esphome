@@ -19,6 +19,7 @@ namespace espbt = esphome::esp32_ble_tracker;
 class SpheroBB8Light;
 
 class SpheroBB8 : public Component, public ble_client::BLEClientNode {
+  friend class ScriptExecutor;
  public:
   void setup() override;
   void loop() override;
@@ -30,6 +31,14 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
 
   void set_rgb(uint8_t r, uint8_t g, uint8_t b);
   void set_back_led(uint8_t brightness);
+
+  // Internal methods for ScriptExecutor to use without stopping scripts
+  void set_rgb_internal(uint8_t r, uint8_t g, uint8_t b) {
+    target_r_ = r; target_g_ = g; target_b_ = b;
+  }
+  void set_back_led_internal(uint8_t brightness) {
+    target_back_brightness_ = brightness;
+  }
 
   void set_status_sensor(text_sensor::TextSensor *sensor) { status_sensor_ = sensor; }
   void set_battery_sensor(sensor::Sensor *sensor) { battery_sensor_ = sensor; }
