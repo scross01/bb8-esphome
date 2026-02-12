@@ -13,7 +13,7 @@ CONF_SPHERO_BB8_ID = "sphero_bb8_id"
 CONFIG_SCHEMA = button.button_schema(SpheroBB8Button).extend(
     {
         cv.GenerateID(CONF_SPHERO_BB8_ID): cv.use_id(SpheroBB8),
-        cv.Required(CONF_TYPE): cv.one_of("CONNECT", "DISCONNECT", upper=True),
+        cv.Required(CONF_TYPE): cv.one_of("CONNECT", "DISCONNECT", "CENTER_HEAD", upper=True),
         cv.Optional(CONF_ENTITY_CATEGORY): cv.entity_category,
     }
 ).extend(cv.COMPONENT_SCHEMA)

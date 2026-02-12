@@ -25,6 +25,12 @@ This `GEMINI.md` file provides essential context for AI agents interacting with 
 *   **State Management:** Tracks `target` vs `current` state to ensure synchronization. Enforces a 50ms rate limit for unacknowledged packets.
 *   **BLE Protocol:** Strict initialization sequence (Subscribe -> Anti-DOS -> TX Power -> Wake -> Stabilize). Uses temporary flags for RGB to avoid flash wear.
 
+## Reference Implemetations
+
+*   **gobot** go lang libraries with bb8 support in ./referneces/gobot/
+*   **sphero v2 python api docs** in ./reference/spherov2-readthedocs-io-en-latest.pdf
+*   **sphero android apk** decombileds in ./reference/apktool/
+
 ## Key Files
 
 *   **`components/sphero_bb8/sphero_bb8.h/cpp`:** Core logic for the hub and packet encoding.
@@ -33,3 +39,9 @@ This `GEMINI.md` file provides essential context for AI agents interacting with 
 *   **`components/sphero_bb8/text_sensor.py`:** Python configuration for the connection status sensor.
 *   **`DEVELOPMENT.md`:** Deep technical documentation on architecture and protocol.
 *   **`README.md`:** User-facing documentation and usage instructions.
+
+
+## RULES
+
+*   **NEVER** run `esphome run` or `esphome compile`.  Ask the user to run and report results.
+ 

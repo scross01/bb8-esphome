@@ -54,6 +54,11 @@ button:
     sphero_bb8_id: bb8_hub
     type: DISCONNECT
 
+  - platform: sphero_bb8
+    name: "BB8 Center Head"
+    sphero_bb8_id: bb8_hub
+    type: CENTER_HEAD
+
 text_sensor:
   - platform: sphero_bb8
     name: "BB8 Connection Status"

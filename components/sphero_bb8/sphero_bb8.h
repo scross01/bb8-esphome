@@ -44,6 +44,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
 
   void connect();
   void disconnect();
+  void center_head();
 
   bool is_ready() const { return state_ == READY; }
 
@@ -114,8 +115,10 @@ class SpheroBB8Button : public button::Button, public Component {
   void press_action() override {
     if (this->type_ == "CONNECT") {
       this->parent_->connect();
-    } else {
+    } else if (this->type_ == "DISCONNECT") {
       this->parent_->disconnect();
+    } else if (this->type_ == "CENTER_HEAD") {
+      this->parent_->center_head();
     }
   }
 

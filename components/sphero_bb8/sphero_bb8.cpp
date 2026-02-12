@@ -22,6 +22,7 @@ static const uint8_t CID_VERSION = 0x02;
 static const uint8_t CID_GET_POWER_STATE = 0x20;
 static const uint8_t CID_SET_POWER_NOTIFY = 0x21;
 static const uint8_t CID_CONFIG_COLLISION = 0x12;
+static const uint8_t CID_SET_SELF_LEVEL = 0x09;
 
 void SpheroBB8::setup() {
   this->current_r_ = 0xFE;
@@ -240,6 +241,13 @@ void SpheroBB8::configure_collision_detection_() {
     this->send_packet(DID_SPHERO, CID_CONFIG_COLLISION, {0x01, 0x64, 0x64, 0x64, 0x64, 0x32});
 }
 
+void SpheroBB8::center_head() {
+    ESP_LOGI(TAG, "Centering Head (Self Level)...");
+    // DID 0x02, CID 0x09
+    // Payload: [0x01, 0x00, 0x00, 0x00] -> Options: Start, AngleLimit: 0, Timeout: 0, TrueTime: 0
+    this->send_packet(DID_SPHERO, CID_SET_SELF_LEVEL, {0x01, 0x00, 0x00, 0x00}, false);
+}
+
 void SpheroBB8::update_status_sensor_(const std::string &status) {
   if (this->status_sensor_ != nullptr && this->last_status_str_ != status) {
     this->status_sensor_->publish_state(status);
@@ -448,7 +456,13 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
     sprintf(buf, "%02X ", b);
     hex_dump += buf;
   }
-  ESP_LOGD(TAG, "Processing Packet: %s", hex_dump.c_str());
+  // Check if it's a simple ACK packet (SOP1=FF, SOP2=FF, MRSP=00, SEQ, DLEN=01, CHK)
+  // 6 bytes total, no payload, success code.
+  if (data.size() == 6 && data[0] == 0xFF && data[1] == 0xFF && data[2] == 0x00 && data[4] == 0x01) {
+    ESP_LOGV(TAG, "Processing Packet: %s", hex_dump.c_str());
+  } else {
+    ESP_LOGD(TAG, "Processing Packet: %s", hex_dump.c_str());
+  }
 
   if (data.size() < 5) return;
   
@@ -473,10 +487,10 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
     
          if (this->battery_sensor_ != nullptr) {
             float level = 0.0f;
-            if (state == 0x01) level = 100.0f;
+            if (state == 0x01) return; // Don't jump to 100% when charging starts, wait for poll
             else if (state == 0x02) level = 100.0f;
-            else if (state == 0x03) level = 20.0f;
-            else if (state == 0x04) level = 5.0f;
+            else if (state == 0x03) level = 10.0f;
+            else if (state == 0x04) level = 1.0f;
             this->battery_sensor_->publish_state(level);
          }
      }
@@ -526,36 +540,56 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
 
   if (seq == this->power_req_seq_) {
     if (dlen >= 3) {
-      uint8_t rec_state = data[5];
+      uint8_t rec_ver = data[5];
       uint8_t power_state = data[6];
-      ESP_LOGD(TAG, "Received Power State: RecState=0x%02X, PowerState=0x%02X", rec_state, power_state);
+      uint16_t voltage_raw = (data[7] << 8) | data[8];
+      float voltage = voltage_raw / 100.0f;
+      ESP_LOGD(TAG, "Received Power State: RecVer=0x%02X, PowerState=0x%02X, Voltage=%.2fV", rec_ver, power_state, voltage);
 
       if (this->charging_status_sensor_ != nullptr) {
         std::string status = "Unknown";
-        if (rec_state == 0x01) status = "Charging";
-        else if (rec_state == 0x02) status = "OK";
-        else if (rec_state == 0x03) status = "Low";
-        else if (rec_state == 0x04) status = "Critical";
+        if (power_state == 0x01) status = "Charging";
+        else if (power_state == 0x02) status = "OK";
+        else if (power_state == 0x03) status = "Low";
+        else if (power_state == 0x04) status = "Critical";
         this->charging_status_sensor_->publish_state(status);
       }
 
       if (this->battery_sensor_ != nullptr) {
         float level = 0.0f;
-        if (rec_state == 0x01) level = 100.0f;
-        else if (rec_state == 0x02) level = 100.0f;
-        else if (rec_state == 0x03) level = 20.0f;
-        else if (rec_state == 0x04) level = 5.0f;
+        
+        // Estimate level from voltage
+        // For 2S: 7.0V (empty) to 8.4V (full)
+        // For 1S: 3.5V (empty) to 4.2V (full)
+        if (voltage > 5.0f) { // Likely 2S
+            level = (voltage - 7.0f) / (8.4f - 7.0f) * 100.0f;
+        } else if (voltage > 2.0f) { // Likely 1S
+            level = (voltage - 3.5f) / (4.2f - 3.5f) * 100.0f;
+        }
+        
+        if (level > 100.0f) level = 100.0f;
+        if (level < 0.0f) level = 0.0f;
+        
+        // If we don't have a good voltage (e.g. 0), fallback to state
+        if (voltage < 1.0f) {
+            if (power_state == 0x01 || power_state == 0x02) level = 100.0f;
+            else if (power_state == 0x03) level = 10.0f;
+            else if (power_state == 0x04) level = 1.0f;
+        }
+
         this->battery_sensor_->publish_state(level);
       }
     }
   } 
   else if (seq == this->version_req_seq_) {
-     if (dlen >= 6 && data.size() >= 10) {
+     if (dlen >= 5 && data.size() >= 10) {
        uint8_t maj = data[8];
        uint8_t min = data[9];
        char buffer[16];
-       snprintf(buffer, sizeof(buffer), "%d.%d", maj, min);
-       ESP_LOGI(TAG, "Received Firmware Version: %s", buffer);
+       // BB-8 (Ray) firmware version is reported as Major.Minor (e.g., 4.69).
+       // The official Android app appends a ".0" revision to this for display.
+       snprintf(buffer, sizeof(buffer), "%d.%d.0", maj, min);
+       ESP_LOGI(TAG, "Received Firmware Version: %s (Raw DLEN=%d)", buffer, dlen);
        if (this->version_sensor_ != nullptr) {
          this->version_sensor_->publish_state(buffer);
        }
