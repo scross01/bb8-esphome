@@ -113,7 +113,7 @@ void SpheroBB8::loop() {
     this->last_state_change_ = now;
   }
   else if (this->state_ == ANTI_DOS && this->char_handle_anti_dos_ != 0) {
-    if (now - this->last_state_change_ < 200) return;
+    if (now - this->last_state_change_ < this->wake_wait_ms_) return;
 
     this->update_status_sensor_("Initializing");
     ESP_LOGD(TAG, "Initialization State: Anti-DOS");
@@ -164,7 +164,7 @@ void SpheroBB8::loop() {
   }
   else if (this->state_ == READY_STABILIZE) {
     this->update_status_sensor_("Initializing");
-    if (now - this->last_state_change_ >= 2000) {
+    if (now - this->last_state_change_ >= this->stabilize_wait_ms_) {
       this->state_ = READY;
       this->last_state_change_ = now;
       this->last_packet_sent_ = now;
@@ -172,7 +172,7 @@ void SpheroBB8::loop() {
       this->script_executor_.set_parent(this); // Initialize script executor with parent
       ESP_LOGI(TAG, "Sphero BB8 is Ready!");
     } else {
-      ESP_LOGV(TAG, "Initialization State: Stabilizing (%dms remaining)", 2000 - (now - this->last_state_change_));
+      ESP_LOGV(TAG, "Initialization State: Stabilizing (%dms remaining)", (int)(this->stabilize_wait_ms_ - (now - this->last_state_change_)));
     }
   }
   else if (this->state_ == READY) {

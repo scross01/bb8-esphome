@@ -49,6 +49,8 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void set_collision_magnitude_sensor(sensor::Sensor *sensor) { collision_magnitude_sensor_ = sensor; }
   
   void set_auto_connect(bool auto_connect) { auto_connect_ = auto_connect; }
+  void set_wake_wait_ms(uint32_t wait_ms) { wake_wait_ms_ = wait_ms; }
+  void set_stabilize_wait_ms(uint32_t wait_ms) { stabilize_wait_ms_ = wait_ms; }
   void set_enabled(bool enabled) { enabled_ = enabled; }
   void register_light(SpheroBB8Light *light) { lights_.push_back(light); }
 
@@ -123,6 +125,8 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   std::vector<SpheroBB8Light *> lights_;
   std::vector<uint8_t> packet_buffer_;
   bool auto_connect_{false};
+  uint32_t wake_wait_ms_{200};
+  uint32_t stabilize_wait_ms_{500};
   bool enabled_{true};
   std::string last_status_str_{""};
   

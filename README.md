@@ -40,6 +40,21 @@ sphero_bb8:
   id: bb8_hub
   ble_client_id: bb8_client
   auto_connect: false
+  wake_wait_ms: 200      # Optional, default 200ms
+  stabilize_wait_ms: 500  # Optional, default 500ms
+  
+  # Define motion scripts
+  scripts:
+    - name: "Head Shake"
+      steps:
+        - repeat:
+            count: 3
+            steps:
+              - roll: { heading: 30, speed: 0 }
+              - wait: 150ms
+              - roll: { heading: 330, speed: 0 }
+              - wait: 150ms
+        - center_head: {}
 
 light:
   - platform: sphero_bb8
@@ -93,6 +108,23 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 - **id** (Required, ID): The ID to use for this hub.
 - **ble_client_id** (Required, ID): The ID of the `ble_client` that connects to the BB-8.
 - **auto_connect** (Optional, boolean): Whether to automatically connect to the BB-8 on startup. Defaults to `false`.
+- **wake_wait_ms** (Optional, integer): Time to wait after sending the wake command. Defaults to `200`.
+- **stabilize_wait_ms** (Optional, integer): Time to wait for the internal gyro to stabilize after waking. Defaults to `500`.
+- **scripts** (Optional, list): A list of named motion scripts.
+
+### Motion Scripts
+Each script consists of a `name` and a list of `steps`. Available actions:
+- **roll**: `heading` (0-359), `speed` (0-255). Moves in a direction.
+- **stop**: Immediate deceleration.
+- **spin**: `rate` (0-255). Sets rotation rate on vertical axis.
+- **raw_motor**: `left_speed`, `right_speed` (-255 to 255). Direct motor control.
+- **set_heading**: `heading` (default 0). Reorients the "Forward" direction.
+- **light**: `red`, `green`, `blue` (0-255). Updates RGB LED.
+- **back_light**: `brightness` (0-255). Updates blue back LED.
+- **center_head**: Triggers self-leveling sequence.
+- **stabilize**: `state` (boolean). Enables/disables internal gyro.
+- **wait**: `duration` (time). Pauses script execution.
+- **repeat**: `count` (int), `steps` (list). Repeats a sequence of steps.
 
 ### light
 - **platform** (Required, string): Must be `sphero_bb8`.
@@ -104,9 +136,15 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 ### button
 - **platform** (Required, string): Must be `sphero_bb8`.
 - **name** (Required, string): The name of the button.
-- **type** (Required, string): Either `CONNECT` or `DISCONNECT`.
+- **type** (Optional, string): Either `CONNECT`, `DISCONNECT`, or `CENTER_HEAD`.
+- **script_name** (Optional, string): The name of a defined script to execute when the button is pressed.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
 - All other options from [ESPHome Button](https://esphome.io/components/button/index.html).
+
+### Actions
+- **sphero_bb8.execute_script**:
+  - **sphero_bb8_id** (Required, ID): The ID of the hub.
+  - **script** (Required, string): The name of the script to execute.
 
 ### text_sensor
 - **platform** (Required, string): Must be `sphero_bb8`.
@@ -123,4 +161,8 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 
 ## Technical Details
 
-This component is designed specifically for the Sphero BB-8 and the ESP32. It utilizes the ESP-IDF framework to manage GATT operations and characteristic subscriptions. The implementation features a state-synchronization loop that ensures the droid reaches the desired color or brightness even during rapid transitions, while a built-in keep-alive mechanism maintains the connection during idle periods. The status sensor reports "Disconnected", "Connecting", "Initializing", "Ready", and "Disabling".
+This component is designed specifically for the Sphero BB-8 and the ESP32. It utilizes the ESP-IDF framework to manage GATT operations and characteristic subscriptions. The implementation features a state-synchronization loop that ensures the droid reaches the desired color or brightness even during rapid transitions, while a built-in keep-alive mechanism maintains the connection during idle periods. 
+
+The integrated motion scripting engine allows for complex, multi-step behaviors to be programmed directly in YAML. Manual control of lights or movement from Home Assistant will automatically stop any currently running script to ensure the user always has immediate control. 
+
+The status sensor reports "Disconnected", "Connecting", "Initializing", "Ready", and "Disabling".

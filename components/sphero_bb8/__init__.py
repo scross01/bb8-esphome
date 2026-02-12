@@ -19,6 +19,10 @@ CONF_SCRIPTS = "scripts"
 CONF_NAME = "name"
 CONF_STEPS = "steps"
 
+# Initialization overrides
+CONF_WAKE_WAIT_MS = "wake_wait_ms"
+CONF_STABILIZE_WAIT_MS = "stabilize_wait_ms"
+
 # Script action configurations
 CONF_ACTION_ROLL = "roll"
 CONF_ACTION_STOP = "stop"
@@ -160,6 +164,8 @@ CONFIG_SCHEMA = (
         {
             cv.GenerateID(): cv.declare_id(SpheroBB8),
             cv.Optional(CONF_AUTO_CONNECT, default=False): cv.boolean,
+            cv.Optional(CONF_WAKE_WAIT_MS, default=200): cv.int_range(min=0, max=5000),
+            cv.Optional(CONF_STABILIZE_WAIT_MS, default=500): cv.int_range(min=0, max=10000),
             cv.Optional(CONF_SCRIPTS): cv.All([SCRIPT_SCHEMA]),
         }
     )
@@ -292,6 +298,8 @@ async def to_code(config):
     await cg.register_component(var, config)
     await ble_client.register_ble_node(var, config)
     cg.add(var.set_auto_connect(config[CONF_AUTO_CONNECT]))
+    cg.add(var.set_wake_wait_ms(config[CONF_WAKE_WAIT_MS]))
+    cg.add(var.set_stabilize_wait_ms(config[CONF_STABILIZE_WAIT_MS]))
     
     # Add scripts if they are defined
     if CONF_SCRIPTS in config:
