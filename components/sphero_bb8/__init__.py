@@ -64,37 +64,7 @@ CONF_DURATION = "duration"
 # Repeat action parameters
 CONF_COUNT = "count"
 
-def validate_script_action(value):
-    """Validate a script action."""
-    if not isinstance(value, dict):
-        raise cv.Invalid("Script action must be a dictionary")
-    
-    # Check for exactly one action type
-    action_types = [
-        CONF_ACTION_ROLL, CONF_ACTION_STOP, CONF_ACTION_SPIN, 
-        CONF_ACTION_RAW_MOTOR, CONF_ACTION_SET_HEADING, CONF_ACTION_LIGHT,
-        CONF_ACTION_BACK_LIGHT, CONF_ACTION_CENTER_HEAD, CONF_ACTION_STABILIZE,
-        CONF_ACTION_WAIT, CONF_ACTION_REPEAT
-    ]
-    
-    found_actions = []
-    for action_type in action_types:
-        if action_type in value:
-            found_actions.append(action_type)
-    
-    if len(found_actions) != 1:
-        raise cv.Invalid(f"Exactly one action type must be specified. Found: {found_actions}")
-    
-    return value
-
-def validate_script_step(step):
-    """Validate a script step."""
-    if isinstance(step, dict):
-        return validate_script_action(step)
-    else:
-        raise cv.Invalid("Script step must be an action dictionary")
-
-# Define individual action schemas
+# Define individual action schemas first
 ACTION_ROLL_SCHEMA = cv.Schema({
     cv.Required(CONF_HEADING): cv.int_range(min=0, max=359),
     cv.Required(CONF_SPEED): cv.int_range(min=0, max=255),
@@ -135,6 +105,14 @@ ACTION_WAIT_SCHEMA = cv.Any(
     })
 )
 
+# Forward declaration for recursive schema - will be updated after SCRIPT_ACTION_SCHEMA is defined
+def validate_script_step(step):
+    """Validate a script step - defined after SCRIPT_ACTION_SCHEMA."""
+    if isinstance(step, dict):
+        return validate_script_action(step)
+    else:
+        raise cv.Invalid("Script step must be an action dictionary")
+
 ACTION_REPEAT_SCHEMA = cv.Schema({
     cv.Required(CONF_COUNT): cv.positive_int,
     cv.Required(CONF_STEPS): cv.All([validate_script_step]),
@@ -153,6 +131,30 @@ SCRIPT_ACTION_SCHEMA = cv.Schema({
     cv.Optional(CONF_ACTION_WAIT): ACTION_WAIT_SCHEMA,
     cv.Optional(CONF_ACTION_REPEAT): ACTION_REPEAT_SCHEMA,
 })
+
+def validate_script_action(value):
+    """Validate a script action."""
+    if not isinstance(value, dict):
+        raise cv.Invalid("Script action must be a dictionary")
+    
+    # Check for exactly one action type
+    action_types = [
+        CONF_ACTION_ROLL, CONF_ACTION_STOP, CONF_ACTION_SPIN, 
+        CONF_ACTION_RAW_MOTOR, CONF_ACTION_SET_HEADING, CONF_ACTION_LIGHT,
+        CONF_ACTION_BACK_LIGHT, CONF_ACTION_CENTER_HEAD, CONF_ACTION_STABILIZE,
+        CONF_ACTION_WAIT, CONF_ACTION_REPEAT
+    ]
+    
+    found_actions = []
+    for action_type in action_types:
+        if action_type in value:
+            found_actions.append(action_type)
+    
+    if len(found_actions) != 1:
+        raise cv.Invalid(f"Exactly one action type must be specified. Found: {found_actions}")
+    
+    # Apply the schema to validate and convert values (e.g., "150ms" to TimePeriod)
+    return SCRIPT_ACTION_SCHEMA(value)
 
 SCRIPT_SCHEMA = cv.Schema({
     cv.Required(CONF_NAME): cv.string,
@@ -245,11 +247,11 @@ async def generate_script_action(config, action_config):
                 # Format: wait: 1s (params is the time period directly)
                 duration_ms = params
             
-            # ESPHome typically represents time periods as objects with total_seconds() method
-            # or as integer milliseconds. Let's handle both cases.
-            if hasattr(duration_ms, 'total_seconds'):
-                # It's a timedelta-like object
-                duration_ms = int(duration_ms.total_seconds() * 1000)
+            # ESPHome's cv.positive_time_period_milliseconds returns a TimePeriod object
+            # with a .total_milliseconds property
+            if hasattr(duration_ms, 'total_milliseconds'):
+                # It's a TimePeriod object from ESPHome
+                duration_ms = duration_ms.total_milliseconds
             elif isinstance(duration_ms, (int, float)):
                 # Already in the correct format (milliseconds)
                 duration_ms = int(duration_ms)
