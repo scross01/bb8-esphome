@@ -9,6 +9,7 @@
 #include "esphome/components/button/button.h"
 
 #include <vector>
+#include "script_executor.h"
 
 namespace esphome {
 namespace sphero_bb8 {
@@ -45,11 +46,20 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void connect();
   void disconnect();
   void center_head();
+  
+  // Script methods
+  void add_script(const Script &script);
+  bool execute_script(const std::string &name);
+  void stop_script();
+  bool is_script_idle() const { return script_executor_.is_idle(); }
+  bool is_script_running() const { return script_executor_.is_running(); }
 
   bool is_ready() const { return state_ == READY; }
+  
+  // Make send_packet accessible to ScriptExecutor
+  uint8_t send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response = false);
 
  protected:
-  uint8_t send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response = false);
   uint8_t calculate_checksum(uint8_t did, uint8_t cid, uint8_t seq, const std::vector<uint8_t> &data);
   void update_status_sensor_(const std::string &status);
   void force_lights_off_();
@@ -106,6 +116,9 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   bool auto_connect_{false};
   bool enabled_{true};
   std::string last_status_str_{""};
+  
+  // Script execution
+  ScriptExecutor script_executor_;
 };
 
 class SpheroBB8Button : public button::Button, public Component {
@@ -125,6 +138,36 @@ class SpheroBB8Button : public button::Button, public Component {
  protected:
   SpheroBB8 *parent_;
   std::string type_;
+};
+
+class SpheroBB8ScriptButton : public button::Button, public Component {
+ public:
+  void set_parent(SpheroBB8 *parent) { parent_ = parent; }
+  void set_script_name(const std::string &script_name) { script_name_ = script_name; }
+  void press_action() override {
+    if (this->parent_ != nullptr) {
+      this->parent_->execute_script(this->script_name_);
+    }
+  }
+
+ protected:
+  SpheroBB8 *parent_;
+  std::string script_name_;
+};
+
+template<typename... Ts> class ExecuteScriptAction : public Action<Ts...> {
+ public:
+  ExecuteScriptAction() = default;
+  TEMPLATABLE_VALUE(SpheroBB8 *, parent)
+  TEMPLATABLE_VALUE(std::string, script_name)
+
+  void play(Ts... x) override {
+    auto *parent = this->parent_.value(x...);
+    auto script_name = this->script_name_.value(x...);
+    if (parent != nullptr) {
+      parent->execute_script(script_name);
+    }
+  }
 };
 
 }  // namespace sphero_bb8

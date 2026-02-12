@@ -1,6 +1,218 @@
 #include "sphero_bb8.h"
 #include "sphero_bb8_light.h"
 #include "esphome/core/log.h"
+#include "script_executor.h"
+
+namespace esphome {
+namespace sphero_bb8 {
+
+static const char *const SCRIPT_EXECUTOR_TAG = "sphero_bb8.script";
+
+// Inline implementation of ScriptExecutor methods
+ScriptExecutor::ScriptExecutor() {}
+
+void ScriptExecutor::add_script(const Script &script) {
+  scripts_.push_back(script);
+  ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Added script: %s with %zu steps", script.name.c_str(), script.steps.size());
+}
+
+bool ScriptExecutor::execute_script(const std::string &name) {
+  if (state_ != ScriptState::IDLE) {
+    ESP_LOGW(SCRIPT_EXECUTOR_TAG, "Stopping current script to start new script: %s", name.c_str());
+    stop_current_script();
+  }
+
+  // Find the script by name
+  for (size_t i = 0; i < scripts_.size(); i++) {
+    if (scripts_[i].name == name) {
+      current_script_index_ = i;
+      current_step_index_ = 0;
+      state_ = ScriptState::RUNNING;
+
+      // Clear repeat stack
+      while (!repeat_stack_.empty()) {
+        repeat_stack_.pop();
+      }
+
+      ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Starting script execution: %s", name.c_str());
+      return true;
+    }
+  }
+
+  ESP_LOGW(SCRIPT_EXECUTOR_TAG, "Script not found: %s", name.c_str());
+  return false;
+}
+
+void ScriptExecutor::stop_current_script() {
+  if (state_ != ScriptState::IDLE) {
+    ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Stopping current script");
+    state_ = ScriptState::IDLE;
+    current_script_index_ = 0;
+    current_step_index_ = 0;
+
+    // Clear repeat stack
+    while (!repeat_stack_.empty()) {
+      repeat_stack_.pop();
+    }
+  }
+}
+
+void ScriptExecutor::loop() {
+  if (state_ != ScriptState::RUNNING) {
+    return;
+  }
+
+  // Check if we're currently waiting
+  if (wait_duration_ > 0) {
+    if (millis() - wait_start_time_ >= wait_duration_) {
+      // Wait is over, reset and continue to next step
+      wait_duration_ = 0;
+      execute_next_step_();
+    }
+    return;
+  }
+
+  // Execute the current step if we're not waiting
+  execute_next_step_();
+}
+
+void ScriptExecutor::execute_next_step_() {
+  if (current_script_index_ >= scripts_.size()) {
+    state_ = ScriptState::FINISHED;
+    ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Script execution finished");
+    return;
+  }
+
+  Script &current_script = scripts_[current_script_index_];
+
+  // Check if we have a repeat in progress
+  if (!repeat_stack_.empty()) {
+    auto &top = repeat_stack_.top();
+    size_t repeat_step_idx = top.first;
+    size_t remaining_iterations = top.second;
+
+    if (remaining_iterations > 0) {
+      // Execute the repeated step
+      const ScriptAction &action = current_script.steps[repeat_step_idx];
+      execute_action_(action);
+
+      // Update the repeat count
+      top.second--;
+
+      // If iterations are done, pop from stack and advance to next step
+      if (top.second == 0) {
+        repeat_stack_.pop();
+        current_step_index_ = repeat_step_idx + 1;
+      }
+      return;
+    }
+  }
+
+  // Check if we've reached the end of the script
+  if (current_step_index_ >= current_script.steps.size()) {
+    state_ = ScriptState::FINISHED;
+    ESP_LOGI(SCRIPT_EXECUTOR_TAG, "Script execution finished");
+    return;
+  }
+
+  const ScriptAction &action = current_script.steps[current_step_index_];
+
+  // Handle repeat action specially
+  if (action.type == ScriptActionType::REPEAT) {
+    // Push to repeat stack: (step_index_after_repeat, remaining_iterations)
+    repeat_stack_.push(std::make_pair(current_step_index_ + 1, action.repeat_count));
+
+    // Execute the first iteration of the repeat steps
+    for (const auto &repeat_step : action.repeat_steps) {
+      execute_action_(repeat_step);
+    }
+
+    // Decrement the repeat count since we just executed one iteration
+    repeat_stack_.top().second--;
+
+    // If no more iterations needed, pop from stack
+    if (repeat_stack_.top().second == 0) {
+      repeat_stack_.pop();
+    }
+
+    current_step_index_++; // Move past the repeat action
+    return;
+  }
+
+  // Execute the current action
+  execute_action_(action);
+
+  // Advance to next step
+  current_step_index_++;
+}
+
+void ScriptExecutor::execute_action_(const ScriptAction &action) {
+  if (parent_ == nullptr) {
+    ESP_LOGE(SCRIPT_EXECUTOR_TAG, "Parent not set, cannot execute action");
+    return;
+  }
+
+  switch (action.type) {
+    case ScriptActionType::ROLL:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing roll: speed=%d, heading=%d", action.roll_speed, action.roll_heading);
+      parent_->send_packet(0x02, 0x30, {action.roll_speed, (uint8_t)(action.roll_heading >> 8),
+                                       (uint8_t)(action.roll_heading & 0xFF), 0x01}, false);
+      break;
+
+    case ScriptActionType::STOP:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing stop");
+      parent_->send_packet(0x02, 0x30, {0x00, 0x00, 0x00, 0x01}, false);
+      break;
+
+    case ScriptActionType::SPIN:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing spin: rate=%d", action.spin_rate);
+      parent_->send_packet(0x02, 0x03, {action.spin_rate}, false);
+      break;
+
+    case ScriptActionType::RAW_MOTOR:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing raw motor: left=%d, right=%d", action.left_speed, action.right_speed);
+      parent_->send_packet(0x02, 0x33, {0x01, action.left_speed, 0x01, action.right_speed}, false); // Forward mode for both
+      break;
+
+    case ScriptActionType::SET_HEADING:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing set heading: %d", action.heading);
+      parent_->send_packet(0x02, 0x01, {(uint8_t)(action.heading >> 8), (uint8_t)(action.heading & 0xFF)}, false);
+      break;
+
+    case ScriptActionType::LIGHT:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing light: r=%d, g=%d, b=%d", action.red, action.green, action.blue);
+      parent_->set_rgb(action.red, action.green, action.blue);
+      break;
+
+    case ScriptActionType::BACK_LIGHT:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing back light: brightness=%d", action.brightness);
+      parent_->set_back_led(action.brightness);
+      break;
+
+    case ScriptActionType::CENTER_HEAD:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing center head");
+      parent_->center_head();
+      break;
+
+    case ScriptActionType::STABILIZE:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing stabilize: %s", action.stabilize_state ? "ON" : "OFF");
+      parent_->send_packet(0x02, 0x02, {action.stabilize_state ? 0x01 : 0x00}, false);
+      break;
+
+    case ScriptActionType::WAIT:
+      ESP_LOGD(SCRIPT_EXECUTOR_TAG, "Executing wait: %d ms", action.duration_ms);
+      wait_start_time_ = millis();
+      wait_duration_ = action.duration_ms;
+      break;
+
+    case ScriptActionType::REPEAT:
+      // Handled separately in execute_next_step_
+      break;
+  }
+}
+
+}  // namespace sphero_bb8
+}  // namespace esphome
 
 namespace esphome {
 namespace sphero_bb8 {
@@ -94,7 +306,7 @@ void SpheroBB8::loop() {
     this->collision_config_sent_ = false;
     return;
   }
-  
+
   if (this->write_in_progress_) {
     return;
   }
@@ -102,15 +314,15 @@ void SpheroBB8::loop() {
   if (this->state_ == SUBSCRIBE && this->char_handle_responses_ != 0) {
     this->update_status_sensor_("Initializing");
     ESP_LOGD(TAG, "Initialization State: Subscribing to responses");
-    auto status = esp_ble_gattc_register_for_notify(this->parent()->get_gattc_if(), 
-                                                    this->parent()->get_remote_bda(), 
+    auto status = esp_ble_gattc_register_for_notify(this->parent()->get_gattc_if(),
+                                                    this->parent()->get_remote_bda(),
                                                     this->char_handle_responses_);
     if (status != ESP_OK) {
       ESP_LOGE(TAG, "Failed to register for notify: %d", status);
     }
     this->state_ = ANTI_DOS;
     this->last_state_change_ = now;
-  } 
+  }
   else if (this->state_ == ANTI_DOS && this->char_handle_anti_dos_ != 0) {
     if (now - this->last_state_change_ < 200) return;
 
@@ -160,7 +372,7 @@ void SpheroBB8::loop() {
     }
     this->state_ = READY_STABILIZE;
     this->last_state_change_ = now;
-  } 
+  }
   else if (this->state_ == READY_STABILIZE) {
     this->update_status_sensor_("Initializing");
     if (now - this->last_state_change_ >= 2000) {
@@ -168,6 +380,7 @@ void SpheroBB8::loop() {
       this->last_state_change_ = now;
       this->last_packet_sent_ = now;
       this->last_power_check_ = now - 60000; // Force immediate check
+      this->script_executor_.set_parent(this); // Initialize script executor with parent
       ESP_LOGI(TAG, "Sphero BB8 is Ready!");
     } else {
       ESP_LOGV(TAG, "Initialization State: Stabilizing (%dms remaining)", 2000 - (now - this->last_state_change_));
@@ -175,7 +388,7 @@ void SpheroBB8::loop() {
   }
   else if (this->state_ == READY) {
     this->update_status_sensor_("Ready");
-    
+
     // Enable Power Notifications Once
     if (!this->power_notify_enabled_) {
         ESP_LOGD(TAG, "Enabling Power Notifications");
@@ -211,7 +424,7 @@ void SpheroBB8::loop() {
     if (now - this->last_packet_sent_ > 2000) {
       ESP_LOGV(TAG, "Sending Keep Alive Ping");
       this->send_packet(0x00, 0x01, {}, false);
-    } 
+    }
     else if (now - this->last_packet_sent_ < 50) {
       return;
     }
@@ -227,6 +440,9 @@ void SpheroBB8::loop() {
       this->send_packet(0x02, 0x21, {this->target_back_brightness_}, false);
       this->current_back_brightness_ = this->target_back_brightness_;
     }
+    
+    // Run script executor
+    this->script_executor_.loop();
   }
 }
 
@@ -246,6 +462,24 @@ void SpheroBB8::center_head() {
     // DID 0x02, CID 0x09
     // Payload: [0x01, 0x00, 0x00, 0x00] -> Options: Start, AngleLimit: 0, Timeout: 0, TrueTime: 0
     this->send_packet(DID_SPHERO, CID_SET_SELF_LEVEL, {0x01, 0x00, 0x00, 0x00}, false);
+}
+
+void SpheroBB8::add_script(const Script &script) {
+    this->script_executor_.add_script(script);
+}
+
+bool SpheroBB8::execute_script(const std::string &name) {
+    if (!this->is_ready()) {
+        ESP_LOGW(TAG, "Cannot execute script '%s': BB8 is not ready", name.c_str());
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "Attempting to execute script: %s", name.c_str());
+    return this->script_executor_.execute_script(name);
+}
+
+void SpheroBB8::stop_script() {
+    this->script_executor_.stop_current_script();
 }
 
 void SpheroBB8::update_status_sensor_(const std::string &status) {
