@@ -52,13 +52,13 @@ The droid exposes several services, but two are critical for control:
 
 ### The Initialization Handshake
 
-The BB-8 will **not** accept commands and may disconnect if this specific sequence is not followed immediately after connection:
+The BB-8 will **not** accept commands and may disconnect if the initialization actions are not completed after connection. Note on ordering: gobot's reference `initialize()` performs Anti-DOS → TX Power → Wake → **then Subscribe** (subscription last), while this component subscribes **first** (below). Both work — the requirement is that all four actions complete before the first command packet is sent.
 
 1.  **Subscribe** to `Responses` characteristic (`2ba6`). *Critical: prevents internal buffer overflow on the robot.*
 2.  **Send Anti-DOS**: Write string `"011i3"` to `2bbd`.
 3.  **Set TX Power**: Write byte `0x07` to `2bb2`.
 4.  **Wake**: Write byte `0x01` to `2bbf`.
-5.  **Stabilize**: Wait 1000ms in `READY_STABILIZE` state. *Ensures the droid's firmware is fully ready to process unacknowledged commands.*
+5.  **Stabilize**: Wait `stabilize_wait_ms` (default 500ms) in `READY_STABILIZE` state. *Ensures the droid's firmware is fully ready to process unacknowledged commands.*
 
 *Note: All initialization writes should use `ESP_GATT_WRITE_TYPE_RSP` (Write with Response) to ensure sequential execution.*
 
@@ -119,7 +119,7 @@ The component implements several sensors to report the droid's status:
     *   The Main Application (MSA) version bytes are extracted from the payload indices 8 and 9.
 
 3.  **Collision Detection**:
-    *   **Configuration**: Upon connection, the component sends `CID_CONFIG_COLLISION` (`0x12`) to enable the service with default thresholds (100) and deadtime (500ms).
+    *   **Configuration**: Upon connection, the component sends `CID_CONFIG_COLLISION` (`0x12`) to enable the service with default thresholds (100) and deadtime (500ms). Payload: `[Method, Xt, Yt, Xs, Ys, Dead]` = `{0x01, 0x64, 0x64, 0x64, 0x64, 0x32}` — deliberately more sensitive than gobot's defaults (`0x20` thresholds, `0x60` deadtime = 960ms); the deadtime is in 10ms increments, so `0x32` = 500ms. This is an intentional sensitivity choice, not a porting error.
     *   **Async Notifications**: The droid sends an async packet with ID `0x07` upon impact.
     *   **Sensors**:
         *   **Binary Sensor**: Toggles to `True` on impact and auto-resets to `False` after 500ms.
@@ -135,7 +135,7 @@ The component implements several sensors to report the droid's status:
 
 ### 2. Rate Limiting & Synchronization
 To prevent overwhelming the ESP32 BLE stack or the BB-8's internal buffer:
-*   **Throttling**: The `loop()` function enforces a minimum **50ms** interval between packets when using `NO_RSP`.
+*   **Throttling**: The `loop()` function enforces a minimum **50ms** interval between packets when using `NO_RSP`. (For reference, the official Sphero V2 Python API advertises a `cmd_safe_interval` of 0.06s — 60ms — for the Ollie/BB-8 toy class; the component's 50ms is slightly more aggressive but proven reliable in practice. If packet loss is ever observed, 60ms is the conservative setting.)
 *   **State Sync**: The component tracks `target_r` (from HA) vs `current_r` (sent to robot). If they differ, the `loop()` sends an update. This ensures that even if intermediate packets are dropped or throttled, the robot **always** eventually reaches the final requested color.
     *   *Force Sync*: On connection or startup, `current` values are initialized to `0xFE` (invalid) to force an immediate synchronization packet.
 

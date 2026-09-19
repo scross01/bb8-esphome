@@ -3,6 +3,3 @@
 /secrets.yaml
 __pycache__/
 reference
-.kilocode/
-*.md
-*.yaml
