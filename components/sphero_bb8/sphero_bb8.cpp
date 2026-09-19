@@ -530,7 +530,8 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
         else if (power_state == 0x04) status = "Critical";
         this->charging_status_sensor_->publish_state(status);
       }
-      if (this->battery_sensor_ != nullptr) {
+      // Skip battery level publishing when charging - voltage reading is inflated
+      if (this->battery_sensor_ != nullptr && power_state != 0x01) {
         float level = 0.0f;
         if (voltage > 5.0f) level = (voltage - 7.0f) / (8.4f - 7.0f) * 100.0f;
         else if (voltage > 2.0f) level = (voltage - 3.5f) / (4.2f - 3.5f) * 100.0f;
