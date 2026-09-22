@@ -114,7 +114,7 @@ def validate_script_step(step):
         raise cv.Invalid("Script step must be an action dictionary")
 
 ACTION_REPEAT_SCHEMA = cv.Schema({
-    cv.Required(CONF_COUNT): cv.positive_int,
+    cv.Required(CONF_COUNT): cv.int_range(min=1, max=255),
     cv.Required(CONF_STEPS): cv.All([validate_script_step]),
 })
 

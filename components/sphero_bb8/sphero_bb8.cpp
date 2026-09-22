@@ -212,8 +212,12 @@ void SpheroBB8::loop() {
       this->version_requested_ = true;
     }
 
-    // Run script executor (Before 50ms rate limit)
-    this->script_executor_.loop();
+    // Run script executor, rate-limited to the 50ms NO_RSP interval so consecutive
+    // script actions cannot burst packets at the droid's MCU
+    // (docs/MOTION_CONTROL.md section 5; spherov2 advertises 60ms for this toy class).
+    if (now - this->last_packet_sent_ >= 50) {
+      this->script_executor_.loop();
+    }
 
     if (now - this->last_packet_sent_ > 2000) {
       ESP_LOGV(TAG, "Sending Keep Alive Ping");

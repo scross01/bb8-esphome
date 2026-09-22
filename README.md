@@ -124,7 +124,7 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 - **center_head**: Triggers self-leveling sequence.
 - **stabilize**: `state` (boolean). Enables/disables internal gyro.
 - **wait**: `duration` (time). Pauses script execution.
-- **repeat**: `count` (int), `steps` (list). Repeats a sequence of steps.
+- **repeat**: `count` (1–255), `steps` (list). Repeats a sequence of steps.
 
 ### light
 - **platform** (Required, string): Must be `sphero_bb8`.
