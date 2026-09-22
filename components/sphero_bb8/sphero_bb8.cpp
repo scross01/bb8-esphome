@@ -19,6 +19,11 @@ static const char *const CHAR_WAKE_UUID = "22bb746f-2bbf-7554-2d6f-726568705327"
 static const char *const CHAR_COMMANDS_UUID = "22bb746f-2ba1-7554-2d6f-726568705327";
 static const char *const CHAR_RESPONSES_UUID = "22bb746f-2ba6-7554-2d6f-726568705327";
 
+// Status text for the failed-service-search case (wrong MAC / non-Sphero device
+// at that address). A constant because loop()'s not-connected branch must NOT
+// overwrite it with "Connecting" — the two sites must agree exactly.
+static const char *const STATUS_CONN_FAILED = "Connection failed: not a BB-8";
+
 static const uint8_t DID_CORE = 0x00;
 static const uint8_t DID_SPHERO = 0x02;
 static const uint8_t CID_VERSION = 0x02;
@@ -40,6 +45,8 @@ void SpheroBB8::setup() {
 void SpheroBB8::connect() {
   ESP_LOGI(TAG, "Connect button pressed, enabling BB8 connection...");
   this->enabled_ = true;
+  // Clears a previous "Connection failed" message immediately.
+  this->update_status_sensor_("Connecting");
   this->parent()->set_enabled(true);
   this->parent()->set_auto_connect(true);
 }
@@ -95,7 +102,11 @@ void SpheroBB8::loop() {
 
   if (!this->parent()->connected()) {
     this->state_ = DISCONNECTED;
-    this->update_status_sensor_("Connecting");
+    // Don't mask an explicit failure message with "Connecting"; it stays until
+    // the next connect attempt (connect() republishes "Connecting").
+    if (this->last_status_str_ != STATUS_CONN_FAILED) {
+      this->update_status_sensor_("Connecting");
+    }
     this->version_requested_ = false;
     this->power_notify_enabled_ = false;
     this->collision_config_sent_ = false;
@@ -342,6 +353,21 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
         this->state_ = SUBSCRIBE;
       } else {
         ESP_LOGE(TAG, "Failed to find all required characteristics for Sphero BB8");
+        this->update_status_sensor_(STATUS_CONN_FAILED);
+        this->state_ = DISCONNECTED;
+        // Zero the handles ourselves: DISCONNECT may not fire for a client we
+        // disable below (mirrors the DISCONNECT-event cleanup set).
+        this->char_handle_anti_dos_ = 0;
+        this->char_handle_tx_power_ = 0;
+        this->char_handle_wake_ = 0;
+        this->char_handle_commands_ = 0;
+        this->char_handle_responses_ = 0;
+        // Drop the link so ble_client's connect policy (auto_connect or the
+        // user's Connect button) decides what happens next. Do NOT auto-retry
+        // here: a droid left asleep must not be woken repeatedly (README
+        // auto_connect note).
+        this->parent()->set_enabled(false);
+        this->parent()->set_auto_connect(false);
       }
       break;
     }
