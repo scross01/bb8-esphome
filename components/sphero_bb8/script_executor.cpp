@@ -132,7 +132,17 @@ bool ScriptExecutor::execute_action_(const ScriptAction &action) {
 
     case ScriptActionType::RAW_MOTOR:
       ESP_LOGD(TAG, "Step: RawMotor(left=%d, right=%d)", action.left_speed, action.right_speed);
-      seq = parent_->send_packet(0x02, 0x33, {0x01, action.left_speed, 0x01, action.right_speed}, false);
+      {
+        // Sign lives in the YAML value; mode = sign, power = magnitude.
+        // Modes: 0=Off, 1=Forward, 2=Reverse (docs/REFERENCE.md command table).
+        uint8_t lmode = action.left_speed < 0 ? 0x02 : 0x01;
+        uint8_t rmode = action.right_speed < 0 ? 0x02 : 0x01;
+        uint8_t lpower = action.left_speed < 0 ? (uint8_t)(-action.left_speed)
+                                               : (uint8_t)action.left_speed;
+        uint8_t rpower = action.right_speed < 0 ? (uint8_t)(-action.right_speed)
+                                                : (uint8_t)action.right_speed;
+        seq = parent_->send_packet(0x02, 0x33, {lmode, lpower, rmode, rpower}, false);
+      }
       return seq != 0;
 
     case ScriptActionType::SET_HEADING:

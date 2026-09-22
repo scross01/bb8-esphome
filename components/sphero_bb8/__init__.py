@@ -76,8 +76,8 @@ ACTION_SPIN_SCHEMA = cv.Schema({
 })
 
 ACTION_RAW_MOTOR_SCHEMA = cv.Schema({
-    cv.Required(CONF_LEFT_SPEED): cv.int_range(min=0, max=255),
-    cv.Required(CONF_RIGHT_SPEED): cv.int_range(min=0, max=255),
+    cv.Required(CONF_LEFT_SPEED): cv.int_range(min=-255, max=255),
+    cv.Required(CONF_RIGHT_SPEED): cv.int_range(min=-255, max=255),
 })
 
 ACTION_SET_HEADING_SCHEMA = cv.Schema({

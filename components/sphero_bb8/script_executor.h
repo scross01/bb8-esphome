@@ -33,9 +33,9 @@ struct ScriptAction {
   // For spin action
   uint8_t spin_rate{0};
   
-  // For raw motor action
-  uint8_t left_speed{0};
-  uint8_t right_speed{0};
+  // For raw motor action (signed: negative = reverse)
+  int16_t left_speed{0};
+  int16_t right_speed{0};
   
   // For set heading action
   uint16_t heading{0};
