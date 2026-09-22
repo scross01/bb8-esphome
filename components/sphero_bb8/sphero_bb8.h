@@ -42,6 +42,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
 
   void set_status_sensor(text_sensor::TextSensor *sensor) { status_sensor_ = sensor; }
   void set_battery_sensor(sensor::Sensor *sensor) { battery_sensor_ = sensor; }
+  void set_battery_voltage_sensor(sensor::Sensor *sensor) { battery_voltage_sensor_ = sensor; }
   void set_version_sensor(text_sensor::TextSensor *sensor) { version_sensor_ = sensor; }
   void set_charging_status_sensor(text_sensor::TextSensor *sensor) { charging_status_sensor_ = sensor; }
   void set_collision_sensor(binary_sensor::BinarySensor *sensor) { collision_sensor_ = sensor; }
@@ -77,6 +78,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void handle_packet_(const std::vector<uint8_t> &data);
   void process_packet_(const std::vector<uint8_t> &packet);
   void configure_collision_detection_();
+  static float battery_level_from_voltage_(float voltage);  // NaN if implausible
 
   enum State {
     DISCONNECTED,
@@ -104,6 +106,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   uint8_t sequence_number_{0};
   bool write_in_progress_{false};
   bool version_requested_{false};
+  bool was_charging_{false};
   bool power_notify_enabled_{false};
   bool collision_config_sent_{false};
   uint8_t version_req_seq_{0};
@@ -116,6 +119,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
 
   text_sensor::TextSensor *status_sensor_{nullptr};
   sensor::Sensor *battery_sensor_{nullptr};
+  sensor::Sensor *battery_voltage_sensor_{nullptr};
   text_sensor::TextSensor *version_sensor_{nullptr};
   text_sensor::TextSensor *charging_status_sensor_{nullptr};
   binary_sensor::BinarySensor *collision_sensor_{nullptr};

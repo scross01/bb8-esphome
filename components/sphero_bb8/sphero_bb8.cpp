@@ -3,6 +3,8 @@
 #include "esphome/core/log.h"
 #include "script_executor.h"
 
+#include <cmath>
+
 namespace esphome {
 namespace sphero_bb8 {
 
@@ -463,6 +465,20 @@ void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {
   }
 }
 
+float SpheroBB8::battery_level_from_voltage_(float voltage) {
+  // Implausible-reading guard lives here, in exactly one place; NaN signals rejection.
+  if (voltage < 2.0f || voltage > 9.0f) {
+    ESP_LOGW(TAG, "Implausible battery voltage %.2fV, not publishing", voltage);
+    return NAN;
+  }
+  float level = 0.0f;
+  if (voltage > 5.0f) level = (voltage - 7.0f) / (8.4f - 7.0f) * 100.0f;       // 2S pack
+  else if (voltage > 2.0f) level = (voltage - 3.5f) / (4.2f - 3.5f) * 100.0f;  // 1S pack
+  if (level > 100.0f) level = 100.0f;
+  if (level < 0.0f) level = 0.0f;
+  return level;
+}
+
 void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
   if (data.size() < 5) return;
   
@@ -470,8 +486,28 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
      uint8_t id_code = data[2];
      uint16_t length = (data[3] << 8) | data[4];
      
-     if (id_code == 0x01 && length >= 1) {
-         uint8_t state = data[5];
+     if (id_code == 0x01) {
+         // Async power notify. Two payload shapes are handled:
+         //  - DLEN >= 9: full PowerStatePacket [RecVer@5, State@6, Voltage@7-8, ...]
+         //    (layout per reference/gobot .../spherocommon_packets.go PowerStatePacket)
+         //  - DLEN 2: bare state byte [State@5]
+         // Hardware-observed (2026-09): the bare state byte, pushed ~every 11s with no
+         // voltage - battery level therefore updates only from the 60s poll.
+         uint8_t state = 0;
+         bool has_voltage = false;
+         float voltage = 0.0f;
+         if (length >= 9) {
+             state = data[6];
+             voltage = (float)(((data[7] << 8) | data[8])) / 100.0f;
+             has_voltage = true;
+             ESP_LOGD(TAG, "Async power: RecVer=%d state=%d voltage=%.2fV", data[5], state, voltage);
+         } else if (length >= 1) {
+             state = data[5];
+             ESP_LOGD(TAG, "Async power: state=%d (no voltage in payload)", state);
+         } else {
+             return;
+         }
+
          if (this->charging_status_sensor_ != nullptr) {
             std::string status = "Unknown";
             if (state == 0x01) status = "Charging";
@@ -480,13 +516,35 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
             else if (state == 0x04) status = "Critical";
             this->charging_status_sensor_->publish_state(status);
          }
-         if (this->battery_sensor_ != nullptr) {
-            float level = 0.0f;
-            if (state == 0x01) return;
-            else if (state == 0x02) level = 100.0f;
-            else if (state == 0x03) level = 10.0f;
-            else if (state == 0x04) level = 1.0f;
-            this->battery_sensor_->publish_state(level);
+
+         // Track charging transitions (placed on / lifted off the base). When charging
+         // ends, force an immediate battery poll so the level reflects reality (e.g. a
+         // full pack on the base reads ~8.4V -> 100%) instead of waiting for the 60s
+         // cycle. No percentage is ever fabricated from the state category.
+         bool charging = (state == 0x01);
+         if (charging != this->was_charging_) {
+             this->was_charging_ = charging;
+             if (!charging) {
+                 ESP_LOGI(TAG, "Charging ended, forcing battery poll");
+                 this->last_power_check_ = millis() - 60000;
+             }
+         }
+
+         // Raw voltage is diagnostic and published regardless of charging state
+         // (hardware-observed: async bare-state-byte notifications carry no voltage,
+         // so in practice this updates from the DLEN>=9 shape only, if ever seen).
+         if (this->battery_voltage_sensor_ != nullptr && has_voltage) {
+             this->battery_voltage_sensor_->publish_state(voltage);
+         }
+
+         // Battery level ONLY from voltage - never a fabricated category percentage.
+         // While charging the voltage reading is inflated (same rule as the sync path);
+         // implausible voltages are rejected inside battery_level_from_voltage_().
+         if (this->battery_sensor_ != nullptr && has_voltage && state != 0x01) {
+             float level = battery_level_from_voltage_(voltage);
+             if (!std::isnan(level)) {
+                 this->battery_sensor_->publish_state(level);
+             }
          }
      }
      else if (id_code == 0x07 && length >= 1) {
@@ -522,6 +580,11 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
       uint8_t power_state = data[6];
       uint16_t voltage_raw = (data[7] << 8) | data[8];
       float voltage = voltage_raw / 100.0f;
+      // Raw voltage is diagnostic and valid during charging too (that's the point:
+      // watch charge progress in volts while the percentage is intentionally frozen)
+      if (this->battery_voltage_sensor_ != nullptr) {
+        this->battery_voltage_sensor_->publish_state(voltage);
+      }
       if (this->charging_status_sensor_ != nullptr) {
         std::string status = "Unknown";
         if (power_state == 0x01) status = "Charging";
@@ -532,12 +595,10 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
       }
       // Skip battery level publishing when charging - voltage reading is inflated
       if (this->battery_sensor_ != nullptr && power_state != 0x01) {
-        float level = 0.0f;
-        if (voltage > 5.0f) level = (voltage - 7.0f) / (8.4f - 7.0f) * 100.0f;
-        else if (voltage > 2.0f) level = (voltage - 3.5f) / (4.2f - 3.5f) * 100.0f;
-        if (level > 100.0f) level = 100.0f;
-        if (level < 0.0f) level = 0.0f;
-        this->battery_sensor_->publish_state(level);
+        float level = battery_level_from_voltage_(voltage);
+        if (!std::isnan(level)) {
+          this->battery_sensor_->publish_state(level);
+        }
       }
     }
   } 

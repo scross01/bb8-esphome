@@ -5,7 +5,9 @@ from esphome.const import (
     CONF_ID,
     CONF_BATTERY_LEVEL,
     UNIT_PERCENT,
+    UNIT_VOLT,
     DEVICE_CLASS_BATTERY,
+    DEVICE_CLASS_VOLTAGE,
     STATE_CLASS_MEASUREMENT,
     CONF_ENTITY_CATEGORY,
     ENTITY_CATEGORY_DIAGNOSTIC,
@@ -22,6 +24,13 @@ CONFIG_SCHEMA = cv.Schema(
             device_class=DEVICE_CLASS_BATTERY,
             state_class=STATE_CLASS_MEASUREMENT,
             entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+        ),
+        cv.Optional("battery_voltage"): sensor.sensor_schema(
+            unit_of_measurement=UNIT_VOLT,
+            device_class=DEVICE_CLASS_VOLTAGE,
+            state_class=STATE_CLASS_MEASUREMENT,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            accuracy_decimals=2,
         ),
         cv.Optional("collision_speed"): sensor.sensor_schema(
             icon="mdi:speedometer",
@@ -40,6 +49,10 @@ async def to_code(config):
     if CONF_BATTERY_LEVEL in config:
         sens = await sensor.new_sensor(config[CONF_BATTERY_LEVEL])
         cg.add(parent.set_battery_sensor(sens))
+
+    if "battery_voltage" in config:
+        sens = await sensor.new_sensor(config["battery_voltage"])
+        cg.add(parent.set_battery_voltage_sensor(sens))
         
     if "collision_speed" in config:
         sens = await sensor.new_sensor(config["collision_speed"])

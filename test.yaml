@@ -77,6 +77,8 @@ sensor:
   - platform: sphero_bb8
     battery_level:
       name: "BB8 Battery Level"
+    battery_voltage:
+      name: "BB8 Battery Voltage"
     collision_speed:
       name: "BB8 Collision Speed"
     collision_magnitude:

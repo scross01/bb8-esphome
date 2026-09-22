@@ -157,6 +157,7 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 ### sensor
 - **platform** (Required, string): Must be `sphero_bb8`.
 - **battery_level** (Optional, config): Configuration for the battery level sensor.
+- **battery_voltage** (Optional, config): Configuration for a diagnostic raw battery voltage sensor (V); updates in all states including while charging.
 - All other options from [ESPHome Sensor](https://esphome.io/components/sensor/index.html).
 
 ## Technical Details

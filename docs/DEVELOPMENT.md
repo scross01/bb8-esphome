@@ -107,11 +107,12 @@ The component implements several sensors to report the droid's status:
 1.  **Battery Level & Charging Status**:
     *   **Polling**: The hub polls the power state (`Get Power State`) every 60 seconds.
     *   **Asynchronous Updates**: On connection, the hub enables power notifications (`Set Power Notification`). This allows the droid to push updates immediately when charging starts/stops or battery level changes.
-    *   **Packet Handling**: The `process_packet_` method detects asynchronous packets by checking for `SOP2 = 0xFE`. It parses the payload (State Code) to update the sensors:
-        *   `0x01`: Charging (100%)
-        *   `0x02`: OK (100%)
-        *   `0x03`: Low (20%)
-        *   `0x04`: Critical (5%)
+    *   **Packet Handling**: The `process_packet_` method detects asynchronous packets by checking for `SOP2 = 0xFE`. Battery level is published **only from the reported voltage** (via a shared voltage→percentage helper used by both the poll response and async notifications); it is intentionally **not** updated while charging (inflated voltage), and implausible voltages (< 2 V or > 9 V) are rejected with a warning. The optional `battery_voltage` sensor publishes the raw voltage in **all** states (including charging) and is the way to observe charge progress. When a charging→not-charging transition is seen in an async notification, an immediate battery poll is forced so the level reflects reality (e.g. a full pack on the base reads ~8.4 V → 100%) rather than waiting for the 60s cycle. The async notification updates the charging-status text sensor from the state code:
+        *   `0x01`: Charging
+        *   `0x02`: OK
+        *   `0x03`: Low
+        *   `0x04`: Critical
+    *   **Async payload shapes**: the notification DLEN determines the packet layout — a full PowerStatePacket (DLEN ≥ 9: RecVer@5, State@6, Voltage@7-8) or a bare state byte (DLEN 2, State@5). Hardware-observed (2026-09): the bare state byte, pushed periodically (~every 11s) rather than only on state changes. The full-packet branch is kept for firmware robustness; async notifications carry **no voltage**, so battery level updates come from the 60s poll.
 
 2.  **Firmware Version**:
     *   Requested once, 3 seconds after the connection is established.
