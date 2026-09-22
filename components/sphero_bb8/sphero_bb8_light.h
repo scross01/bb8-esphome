@@ -16,6 +16,10 @@ class SpheroBB8Light : public light::LightOutput, public Component {
   light::LightTraits get_traits() override;
   void write_state(light::LightState *state) override;
 
+  // Publish the hub's current LED targets into the HA light entity (UI re-sync
+  // after a script finishes; script light: steps bypass the light entities).
+  void publish_from_hub();
+
  protected:
   friend class SpheroBB8;
   SpheroBB8 *parent_{nullptr};

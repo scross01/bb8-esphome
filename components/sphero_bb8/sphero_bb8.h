@@ -40,6 +40,18 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
     target_back_brightness_ = brightness;
   }
 
+  // Light-entity path: does NOT stop scripts (fades tick continuously; stopping
+  // on every write tore scripts down mid-fade). Manual-command-stops-script
+  // policy remains on set_rgb/set_back_led below.
+  void set_rgb_from_light(uint8_t r, uint8_t g, uint8_t b);
+  void set_back_led_from_light(uint8_t brightness);
+
+  // Current targets (where the droid's LEDs are heading) for UI re-sync
+  uint8_t target_r() const { return target_r_; }
+  uint8_t target_g() const { return target_g_; }
+  uint8_t target_b() const { return target_b_; }
+  uint8_t target_back_brightness() const { return target_back_brightness_; }
+
   void set_status_sensor(text_sensor::TextSensor *sensor) { status_sensor_ = sensor; }
   void set_battery_sensor(sensor::Sensor *sensor) { battery_sensor_ = sensor; }
   void set_battery_voltage_sensor(sensor::Sensor *sensor) { battery_voltage_sensor_ = sensor; }
@@ -52,6 +64,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void set_auto_connect(bool auto_connect) { auto_connect_ = auto_connect; }
   void set_wake_wait_ms(uint32_t wait_ms) { wake_wait_ms_ = wait_ms; }
   void set_stabilize_wait_ms(uint32_t wait_ms) { stabilize_wait_ms_ = wait_ms; }
+  void set_restore_lights_on_connect(bool b) { restore_lights_on_connect_ = b; }
   void set_enabled(bool enabled) { enabled_ = enabled; }
   void register_light(SpheroBB8Light *light) { lights_.push_back(light); }
 
@@ -65,6 +78,10 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void stop_script();
   bool is_script_idle() const { return script_executor_.is_idle(); }
   bool is_script_running() const { return script_executor_.is_running(); }
+  // Push the droid's actual LED targets into the HA light entities (UI re-sync:
+  // after a script finishes, and after reconnect since force_lights_off_ turned
+  // the UI off on disconnect while targets survive)
+  void publish_led_state_to_lights_();
 
   bool is_ready() const { return state_ == READY; }
   
@@ -131,6 +148,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   bool auto_connect_{false};
   uint32_t wake_wait_ms_{200};
   uint32_t stabilize_wait_ms_{500};
+  bool restore_lights_on_connect_{true};
   bool enabled_{true};
   std::string last_status_str_{""};
   

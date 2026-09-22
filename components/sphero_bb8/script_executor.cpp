@@ -67,6 +67,13 @@ void ScriptExecutor::loop() {
     state_ = ScriptState::FINISHED;
     ESP_LOGI(TAG, "Script execution finished");
     state_ = ScriptState::IDLE;
+    // Re-sync the HA light entities: script light: steps set the hub targets
+    // directly, so until now the UI was still showing the pre-script color.
+    // Only the natural-completion path publishes -- stop paths leave the LEDs
+    // untouched, and the caller's own write already shows in the UI.
+    if (parent_ != nullptr) {
+      parent_->publish_led_state_to_lights_();
+    }
     return;
   }
 

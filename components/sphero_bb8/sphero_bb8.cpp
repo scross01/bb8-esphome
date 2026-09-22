@@ -176,6 +176,13 @@ void SpheroBB8::loop() {
       this->last_packet_sent_ = now;
       this->last_power_check_ = now - 60000; // Force immediate check
       this->script_executor_.set_parent(this); // Initialize script executor with parent
+      // Re-sync HA light entities: force_lights_off_ turned them off on disconnect,
+      // but the target colors survive and are about to be re-sent to the droid
+      // (current_ == 0xFE sentinel) - the UI must show what the droid will show.
+      // Configurable via restore_lights_on_connect (default true).
+      if (this->restore_lights_on_connect_) {
+        this->publish_led_state_to_lights_();
+      }
       ESP_LOGI(TAG, "Sphero BB8 is Ready!");
     } else {
       ESP_LOGV(TAG, "Initialization State: Stabilizing (%dms remaining)", (int)(this->stabilize_wait_ms_ - (now - this->last_state_change_)));
@@ -354,7 +361,10 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       this->char_handle_commands_ = 0;
       this->char_handle_responses_ = 0;
       this->write_in_progress_ = false;
-      this->current_r_ = 0xFE; 
+      this->current_r_ = 0xFE;
+      this->current_g_ = 0xFE;
+      this->current_b_ = 0xFE;
+      this->current_back_brightness_ = 0xFE;
       this->version_requested_ = false;
       this->power_notify_enabled_ = false;
       this->collision_config_sent_ = false;
@@ -397,6 +407,21 @@ void SpheroBB8::set_rgb(uint8_t r, uint8_t g, uint8_t b) {
 void SpheroBB8::set_back_led(uint8_t brightness) {
   this->stop_script();
   this->set_back_led_internal(brightness);
+}
+
+void SpheroBB8::set_rgb_from_light(uint8_t r, uint8_t g, uint8_t b) {
+  this->set_rgb_internal(r, g, b);
+}
+
+void SpheroBB8::set_back_led_from_light(uint8_t brightness) {
+  this->set_back_led_internal(brightness);
+}
+
+void SpheroBB8::publish_led_state_to_lights_() {
+  for (auto *light : this->lights_) {
+    if (light == nullptr) continue;
+    light->publish_from_hub();
+  }
 }
 
 uint8_t SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8_t> &data, bool wait_for_response) {

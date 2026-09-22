@@ -22,6 +22,7 @@ CONF_STEPS = "steps"
 # Initialization overrides
 CONF_WAKE_WAIT_MS = "wake_wait_ms"
 CONF_STABILIZE_WAIT_MS = "stabilize_wait_ms"
+CONF_RESTORE_LIGHTS_ON_CONNECT = "restore_lights_on_connect"
 
 # Script action configurations
 CONF_ACTION_ROLL = "roll"
@@ -168,6 +169,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_AUTO_CONNECT, default=False): cv.boolean,
             cv.Optional(CONF_WAKE_WAIT_MS, default=200): cv.int_range(min=0, max=5000),
             cv.Optional(CONF_STABILIZE_WAIT_MS, default=500): cv.int_range(min=0, max=10000),
+            cv.Optional(CONF_RESTORE_LIGHTS_ON_CONNECT, default=True): cv.boolean,
             cv.Optional(CONF_SCRIPTS): cv.All([SCRIPT_SCHEMA]),
         }
     )
@@ -302,6 +304,7 @@ async def to_code(config):
     cg.add(var.set_auto_connect(config[CONF_AUTO_CONNECT]))
     cg.add(var.set_wake_wait_ms(config[CONF_WAKE_WAIT_MS]))
     cg.add(var.set_stabilize_wait_ms(config[CONF_STABILIZE_WAIT_MS]))
+    cg.add(var.set_restore_lights_on_connect(config[CONF_RESTORE_LIGHTS_ON_CONNECT]))
     
     # Add scripts if they are defined
     if CONF_SCRIPTS in config:

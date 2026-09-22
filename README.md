@@ -110,6 +110,7 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 - **auto_connect** (Optional, boolean): Whether to automatically connect to the BB-8 on startup. Defaults to `false`.
 - **wake_wait_ms** (Optional, integer): Time to wait after sending the wake command. Defaults to `200`.
 - **stabilize_wait_ms** (Optional, integer): Time to wait for the internal gyro to stabilize after waking. Defaults to `500`.
+- **restore_lights_on_connect** (Optional, boolean): Re-apply the last light color after reconnecting. Defaults to `true`.
 - **scripts** (Optional, list): A list of named motion scripts.
 
 ### Motion Scripts
