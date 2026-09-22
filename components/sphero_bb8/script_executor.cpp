@@ -50,6 +50,11 @@ void ScriptExecutor::loop() {
     return;
   }
 
+  // Defense in depth: never pump the script when the hub isn't READY (e.g. mid-reconnect).
+  if (parent_ != nullptr && !parent_->is_ready()) {
+    return;
+  }
+
   if (wait_duration_ > 0) {
     if (millis() - wait_start_time_ >= wait_duration_) {
       wait_duration_ = 0;

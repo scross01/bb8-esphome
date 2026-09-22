@@ -46,6 +46,10 @@ void SpheroBB8::connect() {
 
 void SpheroBB8::disconnect() {
   ESP_LOGI(TAG, "Disconnect button pressed, disabling BB8 connection...");
+  if (this->is_script_running()) {
+    ESP_LOGI(TAG, "Disconnect requested, stopping motion script");
+  }
+  this->stop_script();
   this->enabled_ = false;
   this->parent()->set_auto_connect(false);
   this->version_requested_ = false;
@@ -355,6 +359,10 @@ void SpheroBB8::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       this->power_notify_enabled_ = false;
       this->collision_config_sent_ = false;
       this->update_status_sensor_("Disconnected");
+      if (this->is_script_running()) {
+        ESP_LOGI(TAG, "Connection lost, stopping motion script");
+      }
+      this->stop_script();
       this->force_lights_off_();
       break;
     }
