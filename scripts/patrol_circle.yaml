@@ -1,0 +1,14 @@
+# Square patrol circuit with color beats (moved from test.yaml's inline scripts).
+- name: "Patrol Circle"
+  steps:
+    - light: { red: 0, green: 255, blue: 0 }
+    - roll: { heading: 0, speed: 100 }
+    - wait: 1s
+    - roll: { heading: 90, speed: 100 }
+    - wait: 1s
+    - roll: { heading: 180, speed: 100 }
+    - wait: 1s
+    - roll: { heading: 270, speed: 100 }
+    - wait: 1s
+    - stop: {}
+    - light: { red: 0, green: 0, blue: 255 }

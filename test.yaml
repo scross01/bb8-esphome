@@ -45,47 +45,10 @@ sphero_bb8:
   ble_client_id: bb8_client
   auto_connect: false
   restore_lights_on_connect: true   # Re-apply last color after reconnect (default true)
-  
-  # Define motion scripts
-  scripts:
-    - name: "Patrol Circle"
-      steps:
-        - light: { red: 0, green: 255, blue: 0 }
-        - roll: { heading: 0, speed: 100 }
-        - wait: 1s
-        - roll: { heading: 90, speed: 100 }
-        - wait: 1s
-        - roll: { heading: 180, speed: 100 }
-        - wait: 1s
-        - roll: { heading: 270, speed: 100 }
-        - wait: 1s
-        - stop: {}
-        - light: { red: 0, green: 0, blue: 255 }
 
-    - name: "Rainbow Dance"
-      steps:
-        - repeat:
-            count: 5
-            steps:
-              - light: { red: 255, green: 0, blue: 0 }
-              - wait: 1000ms
-              - light: { red: 0, green: 255, blue: 0 }
-              - wait: 1000ms
-              - light: { red: 0, green: 0, blue: 255 }
-              - wait: 1000ms
-              - spin: { rate: 200 }
-              - wait: 1s
-              - spin: { rate: 0 }
-        - stop: {}
-        - light: { red: 255, green: 255, blue: 255 }
-
-    - name: "Motor Wiggle"
-      steps:
-        - raw_motor: { left_speed: -100, right_speed: 100 }
-        - wait: 300ms
-        - raw_motor: { left_speed: 100, right_speed: -100 }
-        - wait: 300ms
-        - stop: {}
+  # Motion scripts, one file per script in scripts/. Comment this line out (or
+  # repoint it) to load a different set; script buttons below must match names.
+  scripts: !include_dir_merge_list scripts
   
 light:
   - platform: sphero_bb8
@@ -121,6 +84,23 @@ sensor:
     update_interval: 60s
     entity_category: "diagnostic"
 
+# Dropdown launcher: lists every installed script (from scripts/). Pick one to
+# run it; the selection follows every script start, even ones launched from
+# buttons or automations.
+select:
+  - platform: sphero_bb8
+    name: "BB8 Script"
+    sphero_bb8_id: bb8_hub
+
+# Subset variant: show only some scripts in a dropdown, e.g. the non-favorites
+# select:
+#   - platform: sphero_bb8
+#     name: "BB8 Other Scripts"
+#     sphero_bb8_id: bb8_hub
+#     scripts:
+#       - "Patrol Circle"
+#       - "Rainbow Dance"
+
 text_sensor:
   - platform: version
     name: "ESPHome Version"
@@ -134,7 +114,8 @@ text_sensor:
       name: "BB8 Charging Status"
 
 button:
-  # BB8 Controls
+  # BB8 Controls (favorites as buttons; everything else lives in the
+  # "BB8 Script" dropdown above)
   - platform: sphero_bb8
     name: "BB8 Connect"
     sphero_bb8_id: bb8_hub
@@ -150,20 +131,11 @@ button:
     sphero_bb8_id: bb8_hub
     type: CENTER_HEAD
 
-  - platform: "sphero_bb8"
-    sphero_bb8_id: bb8_hub
-    script_name: "Patrol Circle"
-    name: "BB8 Patrol Circle"
-
-  - platform: "sphero_bb8"
-    sphero_bb8_id: bb8_hub
-    script_name: "Rainbow Dance"
-    name: "BB8 Rainbow Dance"
-
+  # A favorite as a button; the full list lives in the "BB8 Script" dropdown.
   - platform: "sphero_bb8"
     sphero_bb8_id: bb8_hub
     script_name: "Motor Wiggle"
-    name: "Motor Wiggle"  
+    name: "Motor Wiggle"
 
 
   # Home Assistant Controls

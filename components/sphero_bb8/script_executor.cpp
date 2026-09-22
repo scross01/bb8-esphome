@@ -171,7 +171,7 @@ bool ScriptExecutor::execute_action_(const ScriptAction &action) {
       return seq != 0;
 
     case ScriptActionType::WAIT:
-      ESP_LOGD(TAG, "Step: Wait(%d ms)", action.duration_ms);
+      ESP_LOGD(TAG, "Step: Wait(%u ms)", (unsigned) action.duration_ms);
       wait_start_time_ = millis();
       wait_duration_ = action.duration_ms;
       return true;

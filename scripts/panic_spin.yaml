@@ -1,0 +1,14 @@
+# Alarm routine: urgent red strobing with an in-place panic spin.
+- name: "Panic Spin"
+  steps:
+    - repeat:
+        count: 4
+        steps:
+          - light: { red: 255, green: 0, blue: 0 }
+          - spin: { rate: 255 }
+          - wait: 400ms
+          - light: { red: 0, green: 0, blue: 0 }
+          - wait: 200ms
+    - spin: { rate: 0 }
+    - stop: {}
+    - light: { red: 255, green: 255, blue: 255 }

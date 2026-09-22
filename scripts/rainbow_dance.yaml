@@ -1,0 +1,17 @@
+# Color cycling with a spin accent (moved from test.yaml's inline scripts).
+- name: "Rainbow Dance"
+  steps:
+    - repeat:
+        count: 5
+        steps:
+          - light: { red: 255, green: 0, blue: 0 }
+          - wait: 1000ms
+          - light: { red: 0, green: 255, blue: 0 }
+          - wait: 1000ms
+          - light: { red: 0, green: 0, blue: 255 }
+          - wait: 1000ms
+          - spin: { rate: 200 }
+          - wait: 1s
+          - spin: { rate: 0 }
+    - stop: {}
+    - light: { red: 255, green: 255, blue: 255 }

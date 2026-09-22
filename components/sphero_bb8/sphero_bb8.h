@@ -20,6 +20,7 @@ namespace espbt = esphome::esp32_ble_tracker;
 // packet_checksum (TX) and checksum_bytes (RX).
 
 class SpheroBB8Light;
+class SpheroBB8ScriptSelect;
 
 class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   friend class ScriptExecutor;
@@ -70,6 +71,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void set_restore_lights_on_connect(bool b) { restore_lights_on_connect_ = b; }
   void set_enabled(bool enabled) { enabled_ = enabled; }
   void register_light(SpheroBB8Light *light) { lights_.push_back(light); }
+  void register_script_select(SpheroBB8ScriptSelect *sel) { script_selects_.push_back(sel); }
 
   void connect();
   void disconnect();
@@ -147,6 +149,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   sensor::Sensor *collision_magnitude_sensor_{nullptr};
 
   std::vector<SpheroBB8Light *> lights_;
+  std::vector<SpheroBB8ScriptSelect *> script_selects_;
   std::vector<uint8_t> packet_buffer_;
   bool auto_connect_{false};
   uint32_t wake_wait_ms_{200};

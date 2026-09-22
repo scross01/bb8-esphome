@@ -1,0 +1,17 @@
+# Wake ritual: slow blue boot-up glow, a stretch roll-out and back, settle to
+# the classic blue dome.
+- name: "Droid Wake"
+  steps:
+    - light: { red: 0, green: 0, blue: 40 }
+    - wait: 500ms
+    - light: { red: 0, green: 0, blue: 120 }
+    - wait: 500ms
+    - back_light: { brightness: 255 }
+    - roll: { heading: 0, speed: 60 }
+    - wait: 900ms
+    - stop: {}
+    - wait: 300ms
+    - roll: { heading: 180, speed: 60 }
+    - wait: 900ms
+    - stop: {}
+    - light: { red: 0, green: 0, blue: 255 }

@@ -1,0 +1,19 @@
+# Figure-8: two opposing circles joined by a heading swap. Slow speed keeps
+# the turns readable.
+- name: "Figure Eight"
+  steps:
+    - repeat:
+        count: 2
+        steps:
+          - roll: { heading: 0, speed: 90 }
+          - wait: 800ms
+          - roll: { heading: 90, speed: 90 }
+          - wait: 800ms
+          - roll: { heading: 180, speed: 90 }
+          - wait: 800ms
+          - roll: { heading: 270, speed: 90 }
+          - wait: 800ms
+          - spin: { rate: 120 }
+          - wait: 600ms
+          - spin: { rate: 0 }
+    - stop: {}

@@ -1,0 +1,19 @@
+# Head-shake shimmy: quick alternating heading nudges at zero speed, with the
+# tail light flickering in time.
+- name: "Shimmy"
+  steps:
+    - repeat:
+        count: 3
+        steps:
+          - back_light: { brightness: 255 }
+          - roll: { heading: 30, speed: 0 }
+          - wait: 150ms
+          - roll: { heading: 330, speed: 0 }
+          - wait: 150ms
+          - back_light: { brightness: 40 }
+          - roll: { heading: 30, speed: 0 }
+          - wait: 150ms
+          - roll: { heading: 330, speed: 0 }
+          - wait: 150ms
+    - back_light: { brightness: 255 }
+    - stop: {}

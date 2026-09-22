@@ -2,6 +2,10 @@
 
 All notable user-facing changes to the BB-8 ESPHome component are documented here.
 
+## [x.x.x] - In development
+
+- Script launcher dropdown (`select:` platform): lists installed motion scripts, optional `scripts:` filter for subsets, selection follows every script start.
+
 ## [0.2.0] - 2026-09-22
 
 ### Added

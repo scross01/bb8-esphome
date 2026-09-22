@@ -1,5 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome.core import CORE
 from esphome.components import ble_client
 from esphome.const import CONF_ID
 
@@ -305,7 +306,14 @@ async def to_code(config):
     cg.add(var.set_wake_wait_ms(config[CONF_WAKE_WAIT_MS]))
     cg.add(var.set_stabilize_wait_ms(config[CONF_STABILIZE_WAIT_MS]))
     cg.add(var.set_restore_lights_on_connect(config[CONF_RESTORE_LIGHTS_ON_CONNECT]))
-    
+
+    # Record script names (definition order) for child platforms, e.g. the
+    # select platform's dropdown options. Populated before child to_code runs
+    # (children depend on the hub ID via cv.use_id, which orders codegen).
+    CORE.data.setdefault("sphero_bb8", {})[CONF_SCRIPTS] = [
+        s[CONF_NAME] for s in config.get(CONF_SCRIPTS, [])
+    ]
+
     # Add scripts if they are defined
     if CONF_SCRIPTS in config:
         for script_config in config[CONF_SCRIPTS]:

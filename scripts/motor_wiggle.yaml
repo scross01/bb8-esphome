@@ -1,0 +1,8 @@
+# Signed raw_motor pivot test (moved from test.yaml's inline scripts).
+- name: "Motor Wiggle"
+  steps:
+    - raw_motor: { left_speed: -100, right_speed: 100 }
+    - wait: 300ms
+    - raw_motor: { left_speed: 100, right_speed: -100 }
+    - wait: 300ms
+    - stop: {}

@@ -1,5 +1,6 @@
 #include "sphero_bb8.h"
 #include "sphero_bb8_light.h"
+#include "sphero_bb8_select.h"
 #include "esphome/core/log.h"
 #include "script_executor.h"
 #include "protocol.h"
@@ -287,7 +288,15 @@ bool SpheroBB8::execute_script(const std::string &name) {
     }
     
     ESP_LOGI(TAG, "Attempting to execute script: %s", name.c_str());
-    return this->script_executor_.execute_script(name);
+    bool ok = this->script_executor_.execute_script(name);
+    if (ok) {
+        // Keep every script-select dropdown in sync, whatever surface (select,
+        // button, automation) launched the script.
+        for (auto *sel : this->script_selects_) {
+            if (sel != nullptr) sel->notify_script_started(name);
+        }
+    }
+    return ok;
 }
 
 void SpheroBB8::stop_script() {

@@ -1,0 +1,14 @@
+# Sharp reversal pass: sprint up, brake, sprint back. Uses the APK-documented
+# RollModes (Go) via plain roll steps and a hard stop between legs.
+- name: "Droid Charge"
+  steps:
+    - light: { red: 0, green: 0, blue: 255 }
+    - roll: { heading: 0, speed: 200 }
+    - wait: 1200ms
+    - stop: {}
+    - wait: 300ms
+    - light: { red: 255, green: 60, blue: 0 }
+    - roll: { heading: 180, speed: 200 }
+    - wait: 1200ms
+    - stop: {}
+    - light: { red: 0, green: 0, blue: 255 }

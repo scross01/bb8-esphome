@@ -122,7 +122,10 @@ If you are on Linux, you can easily find your droid's MAC address using `bluetoo
 - **wake_wait_ms** (Optional, integer): Time to wait after sending the wake command. Defaults to `200`.
 - **stabilize_wait_ms** (Optional, integer): Time to wait for the internal gyro to stabilize after waking. Defaults to `500`.
 - **restore_lights_on_connect** (Optional, boolean): Re-apply the last light color after reconnecting. Defaults to `true`.
-- **scripts** (Optional, list): A list of named motion scripts.
+- **scripts** (Optional, list): A list of named motion scripts. Tip: keep them in
+  separate files and load them with `scripts: !include_dir_merge_list scripts/` —
+  one YAML file per script (each file contains a single-item list of
+  `{name, steps}`), so sets can be swapped or included per device.
 
 ### Motion Scripts
 Each script consists of a `name` and a list of `steps`. Available actions:
@@ -137,6 +140,19 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 - **stabilize**: `state` (boolean). Enables/disables internal gyro.
 - **wait**: `duration` (time). Pauses script execution.
 - **repeat**: `count` (1–255), `steps` (list). Repeats a sequence of steps.
+
+Per-file layout when using `!include_dir_merge_list scripts/` — each file holds a
+single-item list:
+
+```yaml
+# scripts/shimmy.yaml
+- name: "Shimmy"
+  steps:
+    - roll: { heading: 30, speed: 0 }
+    - wait: 150ms
+    - roll: { heading: 330, speed: 0 }
+    - wait: 150ms
+```
 
 ### light
 - **platform** (Required, string): Must be `sphero_bb8`.
@@ -158,6 +174,29 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 - **script_name** (Optional, string): The name of a defined script to execute when the button is pressed. When set, `type` is not used.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
 - All other options from [ESPHome Button](https://esphome.io/components/button/index.html).
+
+### select
+A dropdown of the installed motion scripts; choosing an option runs that script. The
+option list follows the hub's `scripts:` definitions (codegen time), and the selection
+follows every script start — including launches from script buttons or automations.
+
+- **platform** (Required, string): Must be `sphero_bb8`.
+- **name** (Required, string): The name of the select entity.
+- **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
+- **scripts** (Optional, list of strings): Show only these scripts; defaults to all
+  installed scripts. Lets favorite scripts live on buttons while the rest stay in the
+  dropdown.
+- All other options from [ESPHome Select](https://esphome.io/components/select/index.html).
+
+```yaml
+select:
+  - platform: sphero_bb8
+    name: "BB-8 Script"
+    sphero_bb8_id: bb8_hub
+    # scripts:            # optional filter; default is all scripts
+    #   - "Patrol Circle"
+    #   - "Rainbow Dance"
+```
 
 ### Actions
 - **sphero_bb8.execute_script**:
