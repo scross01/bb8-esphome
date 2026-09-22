@@ -252,7 +252,9 @@ void SpheroBB8::loop() {
 
     if (this->target_r_ != this->current_r_ || this->target_g_ != this->current_g_ || this->target_b_ != this->current_b_) {
       ESP_LOGV(TAG, "Syncing RGB: %d, %d, %d", this->target_r_, this->target_g_, this->target_b_);
-      this->send_packet(0x02, 0x20, {this->target_r_, this->target_g_, this->target_b_, 0x00}, false);
+      // 3-byte payload per the official app (SetMainLedCommand.toByteList(SSS)
+      // emits R,G,B only — no trailing persist flag). Verified 2026-09-22.
+      this->send_packet(0x02, 0x20, {this->target_r_, this->target_g_, this->target_b_}, false);
       this->current_r_ = this->target_r_;
       this->current_g_ = this->target_g_;
       this->current_b_ = this->target_b_;
@@ -269,9 +271,9 @@ void SpheroBB8::configure_collision_detection_() {
     this->send_packet(DID_SPHERO, CID_CONFIG_COLLISION, {0x01, 0x64, 0x64, 0x64, 0x64, 0x32});
 }
 
-void SpheroBB8::center_head() {
+bool SpheroBB8::center_head() {
     ESP_LOGI(TAG, "Centering Head (Self Level)...");
-    this->send_packet(DID_SPHERO, CID_SET_SELF_LEVEL, {0x01, 0x00, 0x00, 0x00}, false);
+    return this->send_packet(DID_SPHERO, CID_SET_SELF_LEVEL, {0x01, 0x00, 0x00, 0x00}, false) != 0;
 }
 
 void SpheroBB8::add_script(const Script &script) {

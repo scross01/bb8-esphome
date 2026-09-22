@@ -73,7 +73,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
 
   void connect();
   void disconnect();
-  void center_head();
+  bool center_head();
   
   // Script methods
   void add_script(const Script &script);

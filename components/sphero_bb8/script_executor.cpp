@@ -163,8 +163,7 @@ bool ScriptExecutor::execute_action_(const ScriptAction &action) {
 
     case ScriptActionType::CENTER_HEAD:
       ESP_LOGD(TAG, "Step: CenterHead");
-      parent_->center_head();
-      return true;
+      return parent_->center_head();
 
     case ScriptActionType::STABILIZE:
       ESP_LOGD(TAG, "Step: Stabilize(%s)", action.stabilize_state ? "ON" : "OFF");

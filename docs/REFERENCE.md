@@ -84,14 +84,18 @@ func CalculateChecksum(buf []byte) byte {
 
 | Command | DID | CID | Data Payload | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Set RGB** | `0x02` | `0x20` | `[R, G, B, 0x01]` | 0x01 is a 'persist' flag. |
+| **Set RGB** | `0x02` | `0x20` | `[R, G, B]` | 3-byte form per the official app's `SetMainLedCommand.toByteList(SSS)` (APK decode). Legacy 4-byte variants `[R,G,B,flag]` are also accepted by the firmware (gobot sends flag=0x01); the trailing byte is ignored. |
 | **Back LED** | `0x02` | `0x21` | `[Brightness]` | 0-255 brightness. |
-| **Roll** | `0x02` | `0x30` | `[Speed, Heading_H, Heading_L, State]` | State: 1=Go, 0=Stop. |
-| **Stop** | `0x02` | `0x30` | `[0, 0, 0, 0x01]` | Equivalent to `Roll(0, 0)`: speed 0 with state 1 (decelerate to a stop while keeping heading control). |
+| **Roll** | `0x02` | `0x30` | `[Speed, Heading_H, Heading_L, RollMode]` | `RollMode` enum per APK: 0=Stop, 1=Go, 2=Calibrate. The official app additionally appends a 5th byte, `ReverseFlag` (0=Off, 1=On); its absence is treated as Off. |
+| **Stop** | `0x02` | `0x30` | `[0, 0, 0, 0x01]` | `Roll(0, GO)`: speed 0 with RollMode=Go (decelerate to a stop while keeping heading control). The APK's `RollMode=Stop` (0) is a distinct, harder stop — not used here. |
 | **Raw Motor** | `0x02` | `0x33` | `[LMode, LPower, RMode, RPower]` | Modes: 0=Off, 1=Fwd, 2=Rev, 3=Brake. |
 | **Sleep** | `0x00` | `0x22` | `[0, 0, 0, 0, 0]` | Deep sleep. |
 | **Ping** | `0x00` | `0x01` | `[]` | Keep-alive (implied). |
 | **Center Head (Self Level)** | `0x02` | `0x09` | `[Options, AngleLimit, Timeout, TrueTime]` | `Options` is a bitmask: bit0=Start (`0x01`), bit1=Level (`0x02`), bit2=Control (`0x04`), bit3=LockHeading (`0x08`); the remaining bytes are angle-limit, timeout, and true-time. The component sends `[0x01, 0x00, 0x00, 0x00]` (start with defaults). Layout per `SelfLevelCommand.toByteList` in the decompiled APK (`reference/apktool/`); field names per the Sphero V2 Python API signature `self_level(opt1..opt4, angle_limit, timeout, true_time)` (`reference/spherov2-readthedocs-io-en-latest.md`). |
+
+When sources disagree on a payload layout, the decompiled Android app is the primary
+reference (`reference/apktool/.../autogen/commands/sphero/`), then the gobot driver,
+then the spherov2 documentation.
 
 ## Asynchronous Responses
 
