@@ -491,6 +491,25 @@ void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {
           packet_len = 5 + dlen;
       }
 
+      // Sanity: no current frame exceeds 21 bytes (collision). 128 leaves headroom
+      // for future data-streaming frames (~88 bytes) from the ROADMAP. A dlen
+      // implying more means the stream is corrupt; resync from scratch. Without
+      // this, an incomplete corrupt frame never satisfies size() < packet_len's
+      // opposite, so the buffer grows forever and all parsing dies until
+      // disconnect (the checksum gate in process_packet_ never sees it — it only
+      // validates already-complete frames).
+      if (packet_len > 128) {
+          ESP_LOGW(TAG, "Corrupt packet length %zu in buffer, resyncing", (size_t)packet_len);
+          this->packet_buffer_.clear();
+          return;
+      }
+      if (this->packet_buffer_.size() > 256) {
+          ESP_LOGW(TAG, "Packet buffer overflow (%zu bytes), resyncing",
+                   this->packet_buffer_.size());
+          this->packet_buffer_.clear();
+          return;
+      }
+
       if (this->packet_buffer_.size() < packet_len) {
           return;
       }
@@ -603,16 +622,23 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
              this->collision_sensor_->publish_state(true);
              this->last_collision_time_ = millis();
          }
-         if (data.size() >= 5 + 16) { 
-             int16_t mag_x = (int16_t)((data[12] << 8) | data[13]);
-             int16_t mag_y = (int16_t)((data[14] << 8) | data[15]);
-             uint8_t speed = data[16];
-             if (this->collision_speed_sensor_ != nullptr) this->collision_speed_sensor_->publish_state(speed);
-             if (this->collision_magnitude_sensor_ != nullptr) {
-                 float magnitude = std::sqrt(mag_x*mag_x + mag_y*mag_y);
-                 this->collision_magnitude_sensor_->publish_state(magnitude);
-             }
-         }
+        // Collision async frame (21 bytes total): payload from index 5 is
+        // X@5-6 Y@7-8 Z@9-10 Axis@11 XMagnitude@12-13 YMagnitude@14-15
+        // Speed@16 Timestamp@17-19, checksum@20. DLEN 0x11 = 16 payload bytes
+        // + checksum. Layout per reference/gobot .../spherocommon_packets.go.
+        if (data.size() >= 5 + 16) {
+            int16_t mag_x = (int16_t)((data[12] << 8) | data[13]);
+            int16_t mag_y = (int16_t)((data[14] << 8) | data[15]);
+            uint8_t speed = data[16];
+            if (this->collision_speed_sensor_ != nullptr) this->collision_speed_sensor_->publish_state(speed);
+            if (this->collision_magnitude_sensor_ != nullptr) {
+                // (float) casts: with mag_x = mag_y = -32768, int math overflows
+                // 2^31 (UB, garbage output on hard impacts). Offsets and the
+                // >= 5 + 16 guard are verified correct — do not "fix" them.
+                float magnitude = std::sqrt((float)mag_x * mag_x + (float)mag_y * mag_y);
+                this->collision_magnitude_sensor_->publish_state(magnitude);
+            }
+        }
      }
      return;
   }
