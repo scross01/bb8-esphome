@@ -2,6 +2,7 @@
 #include "sphero_bb8_light.h"
 #include "esphome/core/log.h"
 #include "script_executor.h"
+#include "protocol.h"
 
 #include <cmath>
 
@@ -492,9 +493,8 @@ uint8_t SpheroBB8::send_packet(uint8_t did, uint8_t cid, const std::vector<uint8
 }
 
 uint8_t SpheroBB8::calculate_checksum(uint8_t did, uint8_t cid, uint8_t seq, const std::vector<uint8_t> &data) {
-  uint32_t sum = did + cid + seq + (data.size() + 1);
-  for (uint8_t b : data) sum += b;
-  return ~(sum % 256) & 0xFF;
+  // Delegates to the shared, host-testable helper (tests/host/test_protocol.cpp).
+  return packet_checksum(did, cid, seq, data);
 }
 
 void SpheroBB8::handle_packet_(const std::vector<uint8_t> &data) {

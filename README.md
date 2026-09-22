@@ -161,6 +161,19 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 - **battery_voltage** (Optional, config): Configuration for a diagnostic raw battery voltage sensor (V); updates in all states including while charging.
 - All other options from [ESPHome Sensor](https://esphome.io/components/sensor/index.html).
 
+## Development
+
+Validate configurations and run the host-side test suite (no hardware needed):
+
+    esphome config test.yaml
+    uvx pytest tests/ -v               # no install needed; or: python3 tests/test_config_validation.py
+    g++ -std=c++17 -Icomponents -Itests/host tests/host/test_protocol.cpp -o /tmp/test_protocol && /tmp/test_protocol
+
+Full firmware builds require `esphome compile <config.yaml>` and are run by the
+operator, not by agents (see AGENTS.md). The Python suite prints one harmless
+ESPHome import-time warning (`register_action ... synchronous=`) that can be
+ignored.
+
 ## Technical Details
 
 This component is designed specifically for the Sphero BB-8 and the ESP32. It utilizes the ESP-IDF framework to manage GATT operations and characteristic subscriptions. The implementation features a state-synchronization loop that ensures the droid reaches the desired color or brightness even during rapid transitions, while a built-in keep-alive mechanism maintains the connection during idle periods. 

@@ -16,18 +16,8 @@ namespace sphero_bb8 {
 
 namespace espbt = esphome::esp32_ble_tracker;
 
-// Response/async checksum: ~(sum(fields + payload) % 256). Callers pass the
-// header bytes between SOP2 and the payload (MRP, SEQ, DLEN for sync frames;
-// ID code and 16-bit DLEN for async frames) as `fields`. Formula identical to
-// SpheroBB8::calculate_checksum (gobot craftPacket, sums from index 2); factored
-// out because response frames carry no DID/CID for the existing helper.
-inline uint8_t checksum_bytes(const std::vector<uint8_t> &fields,
-                              const std::vector<uint8_t> &payload) {
-  uint32_t sum = 0;
-  for (uint8_t b : fields) sum += b;
-  for (uint8_t b : payload) sum += b;
-  return static_cast<uint8_t>(~(sum % 256) & 0xFF);
-}
+// Checksum helpers live in protocol.h (dependency-free, host-testable):
+// packet_checksum (TX) and checksum_bytes (RX).
 
 class SpheroBB8Light;
 
