@@ -518,7 +518,21 @@ float SpheroBB8::battery_level_from_voltage_(float voltage) {
 
 void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
   if (data.size() < 5) return;
-  
+
+  // Validate the checksum before interpreting anything. Both frame types share
+  // the layout SOP1,SOP2,<3 header bytes>,payload...,CHK, so the covered range
+  // is identical: everything between SOP2 and the checksum byte. A real frame
+  // is >= 6 bytes (5 header + chk); shorter frames cannot be validated.
+  if (data.size() >= 6) {
+    const uint8_t expected_chk = data.back();
+    const uint8_t computed = checksum_bytes({data[2], data[3], data[4]},
+                                            std::vector<uint8_t>(data.begin() + 5, data.end() - 1));
+    if (computed != expected_chk) {
+      ESP_LOGW(TAG, "Discarding packet with bad checksum (len=%zu)", data.size());
+      return;
+    }
+  }
+
   if (data[0] == 0xFF && data[1] == 0xFE) {
      uint8_t id_code = data[2];
      uint16_t length = (data[3] << 8) | data[4];
@@ -613,7 +627,9 @@ void SpheroBB8::process_packet_(const std::vector<uint8_t> &data) {
   if (data.size() < 5 + dlen) return;
 
   if (seq == this->power_req_seq_) {
-    if (dlen >= 3) {
+    // Reads through data[8]: need 9 bytes total, i.e. dlen >= 4 (3 payload
+    // bytes + the checksum byte) AND the actual vector large enough.
+    if (dlen >= 4 && data.size() >= 9) {
       uint8_t power_state = data[6];
       uint16_t voltage_raw = (data[7] << 8) | data[8];
       float voltage = voltage_raw / 100.0f;
