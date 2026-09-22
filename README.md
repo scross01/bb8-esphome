@@ -34,14 +34,15 @@ esp32_ble_tracker:
 ble_client:
   - mac_address: D0:0E:71:8D:94:C7  # Replace with your BB-8's MAC address
     id: bb8_client
-    auto_connect: false           # Crucial: prevents waking droid on ESP32 boot
+    auto_connect: false   # Prevents waking droid on ESP32 boot
 
 sphero_bb8:
   id: bb8_hub
   ble_client_id: bb8_client
   auto_connect: false
-  wake_wait_ms: 200      # Optional, default 200ms
-  stabilize_wait_ms: 500  # Optional, default 500ms
+  wake_wait_ms: 200                  # Optional, default 200ms
+  stabilize_wait_ms: 500             # Optional, default 500ms
+  restore_lights_on_connect: true    # Optional, default true: re-apply last color on reconnect
   
   # Define motion scripts
   scripts:
@@ -89,10 +90,20 @@ text_sensor:
     charging_status:
       name: "BB-8 Charging Status"
 
+binary_sensor:
+  - platform: sphero_bb8
+    name: "BB-8 Collision"
+
 sensor:
   - platform: sphero_bb8
     battery_level:
       name: "BB-8 Battery Level"
+    battery_voltage:
+      name: "BB-8 Battery Voltage"
+    collision_speed:
+      name: "BB-8 Collision Speed"
+    collision_magnitude:
+      name: "BB-8 Collision Magnitude"
 ```
 
 ### Finding the MAC Address
@@ -134,11 +145,17 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 - **default_transition_length** (Optional, time): The duration of the color/brightness fade. Defaults to `1s`.
 - All other options from [ESPHome Light](https://esphome.io/components/light/index.html).
 
+### binary_sensor
+- **platform** (Required, string): Must be `sphero_bb8`.
+- **name** (Required, string): The name of the collision binary sensor. Turns ON on impact and auto-resets after 500ms.
+- **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
+- All other options from [ESPHome Binary Sensor](https://esphome.io/components/binary_sensor/index.html).
+
 ### button
 - **platform** (Required, string): Must be `sphero_bb8`.
 - **name** (Required, string): The name of the button.
-- **type** (Optional, string): Either `CONNECT`, `DISCONNECT`, or `CENTER_HEAD`.
-- **script_name** (Optional, string): The name of a defined script to execute when the button is pressed.
+- **type** (Required unless `script_name` is set, string): Either `CONNECT`, `DISCONNECT`, or `CENTER_HEAD`.
+- **script_name** (Optional, string): The name of a defined script to execute when the button is pressed. When set, `type` is not used.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
 - All other options from [ESPHome Button](https://esphome.io/components/button/index.html).
 
@@ -159,6 +176,8 @@ Each script consists of a `name` and a list of `steps`. Available actions:
 - **platform** (Required, string): Must be `sphero_bb8`.
 - **battery_level** (Optional, config): Configuration for the battery level sensor.
 - **battery_voltage** (Optional, config): Configuration for a diagnostic raw battery voltage sensor (V); updates in all states including while charging.
+- **collision_speed** (Optional, config): Configuration for the collision speed sensor.
+- **collision_magnitude** (Optional, config): Configuration for the collision magnitude sensor (computed from X/Y impact magnitudes).
 - All other options from [ESPHome Sensor](https://esphome.io/components/sensor/index.html).
 
 ## Development
@@ -178,6 +197,6 @@ ignored.
 
 This component is designed specifically for the Sphero BB-8 and the ESP32. It utilizes the ESP-IDF framework to manage GATT operations and characteristic subscriptions. The implementation features a state-synchronization loop that ensures the droid reaches the desired color or brightness even during rapid transitions, while a built-in keep-alive mechanism maintains the connection during idle periods. 
 
-The integrated motion scripting engine allows for complex, multi-step behaviors to be programmed directly in YAML. Manual control of lights or movement from Home Assistant will automatically stop any currently running script to ensure the user always has immediate control. 
+The integrated motion scripting engine allows for complex, multi-step behaviors to be programmed directly in YAML. While a script runs it owns the LEDs — brightness fades and color changes from Home Assistant do not interrupt it — and when the script finishes, the Home Assistant light entities re-sync to the droid's final color. One hard stop remains: turning the light OFF in Home Assistant during a script stops the script, so the user always has immediate control.
 
-The status sensor reports "Disconnected", "Connecting", "Initializing", "Ready", and "Disabling".
+The status sensor reports "Disconnected", "Connecting", "Connected", "Initializing", "Ready", and "Disabling". If the BLE service search completes without finding the expected characteristics (e.g. a non-BB-8 device at the configured address), it reports "Connection failed: not a BB-8" instead of waiting forever.

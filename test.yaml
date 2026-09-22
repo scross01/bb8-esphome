@@ -1,20 +1,37 @@
+substitutions:
+  bb8_mac_address: 00:00:00:00:00:00   # Replace with your BB-8's Bluetooth MAC address
+  
 esphome:
   name: bb8-controller
+  friendly_name: BB8 Controller
 
 esp32:
   board: esp32dev
   framework:
     type: esp-idf
 
+# Enable safe mode (required by the button.safe_mode entry below)
+safe_mode:
+
 # Enable logging
 logger:
-  level: DEBUG
+  level: "VERBOSE"
+  logs:
+    # Quiet the ESP32 BLE stack (scan/connect noise) while keeping sphero_bb8 packet
+    # dumps at VERBOSE. Per-tag levels may only be quieter than the global level.
+    # Tags are the bracketed names in log lines, e.g. [D][sphero_bb8:504] -> sphero_bb8
+    esp32_ble: ERROR
+    esp32_ble.advertising: ERROR
+    esp32_ble_tracker: ERROR
+    esp32_ble_client: ERROR
+    ble_client: ERROR
+    ble_device_base: ERROR
 
 # Enable Bluetooth tracker for finding the BB-8
 esp32_ble_tracker:
 
 ble_client:
-  - mac_address: D0:0E:71:8D:94:C7
+  - mac_address: ${bb8_mac_address}
     id: bb8_client
     auto_connect: false
 
@@ -27,46 +44,61 @@ sphero_bb8:
   id: bb8_hub
   ble_client_id: bb8_client
   auto_connect: false
+  restore_lights_on_connect: true   # Re-apply last color after reconnect (default true)
+  
+  # Define motion scripts
+  scripts:
+    - name: "Patrol Circle"
+      steps:
+        - light: { red: 0, green: 255, blue: 0 }
+        - roll: { heading: 0, speed: 100 }
+        - wait: 1s
+        - roll: { heading: 90, speed: 100 }
+        - wait: 1s
+        - roll: { heading: 180, speed: 100 }
+        - wait: 1s
+        - roll: { heading: 270, speed: 100 }
+        - wait: 1s
+        - stop: {}
+        - light: { red: 0, green: 0, blue: 255 }
 
+    - name: "Rainbow Dance"
+      steps:
+        - repeat:
+            count: 5
+            steps:
+              - light: { red: 255, green: 0, blue: 0 }
+              - wait: 1000ms
+              - light: { red: 0, green: 255, blue: 0 }
+              - wait: 1000ms
+              - light: { red: 0, green: 0, blue: 255 }
+              - wait: 1000ms
+              - spin: { rate: 200 }
+              - wait: 1s
+              - spin: { rate: 0 }
+        - stop: {}
+        - light: { red: 255, green: 255, blue: 255 }
+
+    - name: "Motor Wiggle"
+      steps:
+        - raw_motor: { left_speed: -100, right_speed: 100 }
+        - wait: 300ms
+        - raw_motor: { left_speed: 100, right_speed: -100 }
+        - wait: 300ms
+        - stop: {}
+  
 light:
   - platform: sphero_bb8
-    id: rgb_light
+    id: bb8_main_led
     name: "BB8 Main LED"
     sphero_bb8_id: bb8_hub
     type: RGB
-    default_transition_length: 1s
 
   - platform: sphero_bb8
-    id: tail_light
+    id: bb8_tail_led
     name: "BB8 Tail Light"
     sphero_bb8_id: bb8_hub
     type: TAILLIGHT
-    default_transition_length: 500ms
-
-button:
-  - platform: sphero_bb8
-    name: "BB8 Connect"
-    sphero_bb8_id: bb8_hub
-    type: CONNECT
-
-  - platform: sphero_bb8
-    name: "BB8 Disconnect"
-    sphero_bb8_id: bb8_hub
-    type: DISCONNECT
-
-  - platform: sphero_bb8
-    name: "BB8 Center Head"
-    sphero_bb8_id: bb8_hub
-    type: CENTER_HEAD
-
-text_sensor:
-  - platform: sphero_bb8
-    name: "BB8 Connection Status"
-    sphero_bb8_id: bb8_hub
-    firmware_version:
-      name: "BB8 Firmware Version"
-    charging_status:
-      name: "BB8 Charging Status"
 
 binary_sensor:
   - platform: sphero_bb8
@@ -83,5 +115,66 @@ sensor:
       name: "BB8 Collision Speed"
     collision_magnitude:
       name: "BB8 Collision Magnitude"
+    
+  - platform: uptime
+    name: Uptime Sensor
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+text_sensor:
+  - platform: version
+    name: "ESPHome Version"
+
+  - platform: sphero_bb8
+    name: "BB8 Connection Status"
+    sphero_bb8_id: bb8_hub
+    firmware_version:
+      name: "BB8 Firmware Version"
+    charging_status:
+      name: "BB8 Charging Status"
+
+button:
+  # BB8 Controls
+  - platform: sphero_bb8
+    name: "BB8 Connect"
+    sphero_bb8_id: bb8_hub
+    type: CONNECT
+
+  - platform: sphero_bb8
+    name: "BB8 Disconnect"
+    sphero_bb8_id: bb8_hub
+    type: DISCONNECT
+
+  - platform: sphero_bb8
+    name: "BB8 Center Head"
+    sphero_bb8_id: bb8_hub
+    type: CENTER_HEAD
+
+  - platform: "sphero_bb8"
+    sphero_bb8_id: bb8_hub
+    script_name: "Patrol Circle"
+    name: "BB8 Patrol Circle"
+
+  - platform: "sphero_bb8"
+    sphero_bb8_id: bb8_hub
+    script_name: "Rainbow Dance"
+    name: "BB8 Rainbow Dance"
+
+  - platform: "sphero_bb8"
+    sphero_bb8_id: bb8_hub
+    script_name: "Motor Wiggle"
+    name: "Motor Wiggle"  
+
+
+  # Home Assistant Controls
+  - platform: restart
+    name: "Restart"
+
+  - platform: safe_mode
+    name: "Restart (Safe Mode)"
+
+  - platform: shutdown
+    name: "Shutdown"
+
 
 
