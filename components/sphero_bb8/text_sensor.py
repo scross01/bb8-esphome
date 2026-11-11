@@ -18,6 +18,10 @@ CONFIG_SCHEMA = text_sensor.text_sensor_schema().extend(
             entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
             icon="mdi:battery-charging",
         ),
+        cv.Optional("script_status"): text_sensor.text_sensor_schema(
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            icon="mdi:script-play",
+        ),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -58,3 +62,7 @@ async def to_code(config):
     if "charging_status" in config:
         sens = await text_sensor.new_text_sensor(config["charging_status"])
         cg.add(parent.set_charging_status_sensor(sens))
+
+    if "script_status" in config:
+        sens = await text_sensor.new_text_sensor(config["script_status"])
+        cg.add(parent.set_script_status_sensor(sens))

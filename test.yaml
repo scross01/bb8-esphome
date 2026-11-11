@@ -112,6 +112,8 @@ text_sensor:
       name: "BB8 Firmware Version"
     charging_status:
       name: "BB8 Charging Status"
+    script_status:
+      name: "BB8 Script Status"
 
 button:
   # BB8 Controls (favorites as buttons; everything else lives in the

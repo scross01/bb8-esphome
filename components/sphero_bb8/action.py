@@ -14,8 +14,15 @@ ACTION_SCHEMA = cv.Schema({
     cv.Required(CONF_SCRIPT): cv.string,
 })
 
+# synchronous=True: ExecuteScriptAction only overrides play() — the base
+# Action::play_complex runs play() then play_next_() inline, so the chain
+# always advances before the call returns (execute_script merely enqueues
+# into the executor; it never defers to a timer or loop).
 @automation.register_action(
-    "sphero_bb8.execute_script", ExecuteScriptAction, ACTION_SCHEMA
+    "sphero_bb8.execute_script",
+    ExecuteScriptAction,
+    ACTION_SCHEMA,
+    synchronous=True,
 )
 async def execute_script_to_code(config, action_id, template_args, args):
     paren = await cg.get_variable(config[CONF_SPHERO_BB8_ID])

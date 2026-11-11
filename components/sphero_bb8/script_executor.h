@@ -5,6 +5,7 @@
 #include <vector>
 #include <stack>
 #include <string>
+#include <functional>
 
 namespace esphome {
 namespace sphero_bb8 {
@@ -82,8 +83,15 @@ class ScriptExecutor {
   
   bool is_idle() const { return state_ == ScriptState::IDLE; }
   bool is_running() const { return state_ == ScriptState::RUNNING; }
+  // Name of the script currently executing (empty when idle). Valid through the
+  // on_finish callback on natural completion; already cleared on the stop path.
+  const std::string &current_script_name() const { return current_name_; }
   
   void set_parent(class SpheroBB8 *parent) { parent_ = parent; }
+
+  // Invoked once when a script finishes naturally (finished=true) or is
+  // stopped early (finished=false). Not invoked when no script was running.
+  void set_on_finish(std::function<void(bool)> cb) { on_finish_ = std::move(cb); }
 
  protected:
   struct ExecutionFrame {
@@ -96,10 +104,12 @@ class ScriptExecutor {
   
   std::vector<Script> scripts_;
   ScriptState state_{ScriptState::IDLE};
+  std::string current_name_;
   std::stack<ExecutionFrame> frames_;
   
   uint32_t wait_start_time_{0};
   uint32_t wait_duration_{0};
+  std::function<void(bool)> on_finish_;
   
   class SpheroBB8 *parent_{nullptr};
 };

@@ -16,11 +16,12 @@ class SpheroBB8ScriptSelect : public select::Select, public Component {
   explicit SpheroBB8ScriptSelect(SpheroBB8 *parent) : parent_(parent) {}
 
   void setup() override {
-    // Show the first script as the resting selection; the entity is a command
-    // surface, so the state is informational until a script starts.
-    if (!this->traits.get_options().empty()) {
-      this->publish_state(static_cast<size_t>(0));
-    }
+    // Resting state is the synthetic Idle option (index 0 — select.py prepends
+    // it to the options list; that order is a load-bearing invariant). Honest
+    // (no script running) and different from every script name, so HA will
+    // always transmit a re-pick of the same script: HA only sends differential
+    // picks, so resting on a script name blocks same-script re-fire.
+    this->publish_state(static_cast<size_t>(0));
   }
 
   void dump_config() override;
@@ -28,6 +29,10 @@ class SpheroBB8ScriptSelect : public select::Select, public Component {
   // Called by the hub when any script starts; keeps the dropdown in sync with
   // scripts launched from buttons or automations.
   void notify_script_started(const std::string &name) { this->publish_state(name); }
+
+  // Called by the hub when a script finishes or is stopped; back to Idle so
+  // the next pick — including an immediate repeat — always transmits.
+  void notify_script_finished() { this->publish_state(static_cast<size_t>(0)); }
 
  protected:
   void control(const std::string &value) override;

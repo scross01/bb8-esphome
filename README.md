@@ -89,6 +89,8 @@ text_sensor:
       name: "BB-8 Firmware"
     charging_status:
       name: "BB-8 Charging Status"
+    script_status:
+      name: "BB-8 Script Status"
 
 binary_sensor:
   - platform: sphero_bb8
@@ -180,6 +182,12 @@ A dropdown of the installed motion scripts; choosing an option runs that script.
 option list follows the hub's `scripts:` definitions (codegen time), and the selection
 follows every script start — including launches from script buttons or automations.
 
+The select rests on a synthetic **Idle** option when no script is running. Home
+Assistant only transmits picks that differ from the current state, so this resting
+option is what makes re-firing the same script work — including back-to-back repeats.
+The name `Idle` is therefore **reserved**: a script named `Idle` (case-insensitive) is
+rejected at config validation.
+
 - **platform** (Required, string): Must be `sphero_bb8`.
 - **name** (Required, string): The name of the select entity.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
@@ -208,6 +216,7 @@ select:
 - **name** (Required, string): The name of the connection status sensor.
 - **firmware_version** (Optional, config): Configuration for the firmware version sensor.
 - **charging_status** (Optional, config): Configuration for the charging status sensor.
+- **script_status** (Optional, config): Configuration for the motion-script lifecycle sensor. States: `Idle`, `Running: <script name>`, `Stopped` (halted before completing — disconnect, stop action, or barging), or `Failed` (the start attempt failed: droid not ready or unknown script name). Since `Running:` states embed the script name, automation triggers should prefix-match rather than use exact equality.
 - **sphero_bb8_id** (Required, ID): The ID of the `sphero_bb8` hub.
 - All other options from [ESPHome Text Sensor](https://esphome.io/components/text_sensor/index.html).
 

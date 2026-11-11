@@ -24,6 +24,7 @@ bool ScriptExecutor::execute_script(const std::string &name) {
     if (script.name == name) {
       frames_.push({&script.steps, 0, 1});
       state_ = ScriptState::RUNNING;
+      current_name_ = name;
       wait_duration_ = 0;
       ESP_LOGI(TAG, "Started script: %s", name.c_str());
       return true;
@@ -42,6 +43,10 @@ void ScriptExecutor::stop_current_script() {
       frames_.pop();
     }
     wait_duration_ = 0;
+    current_name_.clear();
+    if (on_finish_) {
+      on_finish_(false);
+    }
   }
 }
 
@@ -74,6 +79,12 @@ void ScriptExecutor::loop() {
     if (parent_ != nullptr) {
       parent_->publish_led_state_to_lights_();
     }
+    // Clear the name only after on_finish_: the status sensor publishes
+    // "Running: <name>" -> "Idle" and needs the name on the transition out.
+    if (on_finish_) {
+      on_finish_(true);
+    }
+    current_name_.clear();
     return;
   }
 

@@ -51,10 +51,23 @@ async def to_code(config):
         if not names:
             raise cv.Invalid("sphero_bb8 select scripts filter matched no scripts")
 
+    # Reserved name: "Idle" is the select's synthetic resting option. A script
+    # with that name would collide with it (and HA would suppress re-picking it,
+    # blocking re-fire). Buttons/automations could still fire it, but the
+    # validation removes the footgun entirely.
+    collision = [n for n in names if n.lower() == "idle"]
+    if collision:
+        raise cv.Invalid(
+            f"Script name 'Idle' (case-insensitive) is reserved for the select's "
+            f"resting state; rename script(s): {', '.join(collision)}"
+        )
+
     parent = await cg.get_variable(config[CONF_SPHERO_BB8_ID])
     var = cg.new_Pvariable(config[CONF_ID], parent)
     await cg.register_component(var, config)
-    await select.register_select(var, config, options=names)
+    # Index 0 is the synthetic Idle resting option (sphero_bb8_select.h publishes
+    # index 0 at setup and on script finish — the order here is load-bearing).
+    await select.register_select(var, config, options=["Idle"] + names)
     # Hub notifies every registered select when any script starts, so the
     # dropdown follows launches from buttons and automations too.
     cg.add(parent.register_script_select(var))

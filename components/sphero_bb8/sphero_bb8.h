@@ -61,6 +61,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   void set_battery_voltage_sensor(sensor::Sensor *sensor) { battery_voltage_sensor_ = sensor; }
   void set_version_sensor(text_sensor::TextSensor *sensor) { version_sensor_ = sensor; }
   void set_charging_status_sensor(text_sensor::TextSensor *sensor) { charging_status_sensor_ = sensor; }
+  void set_script_status_sensor(text_sensor::TextSensor *sensor) { script_status_sensor_ = sensor; }
   void set_collision_sensor(binary_sensor::BinarySensor *sensor) { collision_sensor_ = sensor; }
   void set_collision_speed_sensor(sensor::Sensor *sensor) { collision_speed_sensor_ = sensor; }
   void set_collision_magnitude_sensor(sensor::Sensor *sensor) { collision_magnitude_sensor_ = sensor; }
@@ -96,6 +97,8 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
  protected:
   uint8_t calculate_checksum(uint8_t did, uint8_t cid, uint8_t seq, const std::vector<uint8_t> &data);
   void update_status_sensor_(const std::string &status);
+  void publish_script_status_(const std::string &status);
+  void notify_script_finished_();
   void force_lights_off_();
   void handle_packet_(const std::vector<uint8_t> &data);
   void process_packet_(const std::vector<uint8_t> &packet);
@@ -144,6 +147,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   sensor::Sensor *battery_voltage_sensor_{nullptr};
   text_sensor::TextSensor *version_sensor_{nullptr};
   text_sensor::TextSensor *charging_status_sensor_{nullptr};
+  text_sensor::TextSensor *script_status_sensor_{nullptr};
   binary_sensor::BinarySensor *collision_sensor_{nullptr};
   sensor::Sensor *collision_speed_sensor_{nullptr};
   sensor::Sensor *collision_magnitude_sensor_{nullptr};
@@ -157,6 +161,7 @@ class SpheroBB8 : public Component, public ble_client::BLEClientNode {
   bool restore_lights_on_connect_{true};
   bool enabled_{true};
   std::string last_status_str_{""};
+  std::string last_script_status_str_{""};
   
   // Script execution
   ScriptExecutor script_executor_;

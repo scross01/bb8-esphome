@@ -189,6 +189,17 @@ void SpheroBB8::loop() {
       this->last_packet_sent_ = now;
       this->last_power_check_ = now - 60000; // Force immediate check
       this->script_executor_.set_parent(this); // Initialize script executor with parent
+      // Script lifecycle -> select sync: when a script finishes or is stopped,
+      // every script-select dropdown returns to its Idle resting option so the
+      // same script can be re-picked from HA (HA only transmits differential picks).
+      this->script_executor_.set_on_finish([this](bool finished_naturally) {
+        this->notify_script_finished_();
+        // Lifecycle -> HA: natural completion publishes Idle; a stopped script
+        // (disconnect, stop action, barging) publishes Stopped.
+        this->publish_script_status_(finished_naturally ? "Idle" : "Stopped");
+      });
+      // Resting state from boot so the entity is never 'unknown'.
+      this->publish_script_status_("Idle");
       // Re-sync HA light entities: force_lights_off_ turned them off on disconnect,
       // but the target colors survive and are about to be re-sent to the droid
       // (current_ == 0xFE sentinel) - the UI must show what the droid will show.
@@ -284,6 +295,7 @@ void SpheroBB8::add_script(const Script &script) {
 bool SpheroBB8::execute_script(const std::string &name) {
     if (!this->is_ready()) {
         ESP_LOGW(TAG, "Cannot execute script '%s': BB8 is not ready", name.c_str());
+        this->publish_script_status_("Failed");
         return false;
     }
     
@@ -295,6 +307,10 @@ bool SpheroBB8::execute_script(const std::string &name) {
         for (auto *sel : this->script_selects_) {
             if (sel != nullptr) sel->notify_script_started(name);
         }
+        this->publish_script_status_(std::string("Running: ") + name);
+    } else {
+        // Unknown script name (executor-level lookup failure).
+        this->publish_script_status_("Failed");
     }
     return ok;
 }
@@ -303,10 +319,25 @@ void SpheroBB8::stop_script() {
     this->script_executor_.stop_current_script();
 }
 
+void SpheroBB8::notify_script_finished_() {
+  for (auto *sel : this->script_selects_) {
+    if (sel != nullptr) {
+      sel->notify_script_finished();
+    }
+  }
+}
+
 void SpheroBB8::update_status_sensor_(const std::string &status) {
   if (this->status_sensor_ != nullptr && this->last_status_str_ != status) {
     this->status_sensor_->publish_state(status);
     this->last_status_str_ = status;
+  }
+}
+
+void SpheroBB8::publish_script_status_(const std::string &status) {
+  if (this->script_status_sensor_ != nullptr && this->last_script_status_str_ != status) {
+    this->script_status_sensor_->publish_state(status);
+    this->last_script_status_str_ = status;
   }
 }
 
