@@ -4,6 +4,8 @@ All notable user-facing changes to the BB-8 ESPHome component are documented her
 
 ## [x.x.x] - In development
 
+## [0.3.0] - 2026-11-11
+
 - Script launcher dropdown (`select:` platform): lists installed motion scripts, optional `scripts:` filter for subsets, selection follows every script start.
 - `script_status` diagnostic text sensor: reports the motion-script lifecycle as `Idle`, `Running: <script name>`, `Stopped` (halted before completing), or `Failed` (start attempt rejected).
 - The script select now rests on a synthetic `Idle` option (returned to after every script finishes), so re-firing the same script — including back-to-back repeats — always transmits from Home Assistant. The script name `Idle` is reserved and rejected at config validation.
